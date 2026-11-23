@@ -74,6 +74,107 @@ void mi_beacon_summ(void) {
 	mib_summ_data.count++;
 }
 
+#if USE_MIHOME_SPEC_BEACON
+/* IEEE754 single of (v10 / 10), v10 = value x0.1 (integer only, rounded to nearest) */
+u32 mi_float_x01(s16 v10) {
+	u32 sign = 0, a, v, m;
+	int s = 0;
+	if (v10 == 0)
+		return 0;
+	if (v10 < 0) {
+		sign = 0x80000000;
+		a = -v10;
+	} else
+		a = v10;
+	v = a;
+	while (v < (10u << 23)) { // normalize: 10 * 2^23 <= v < 10 * 2^24
+		v <<= 1;
+		s++;
+	}
+	m = (v + 5) / 10;
+	if (m >= (1u << 24)) {
+		m >>= 1;
+		s--;
+	}
+	return sign | ((u32)(150 - s) << 23) | (m & 0x7fffff);
+}
+
+/* Encrypted MiBeacon v5 as the original MJWSD06MMC firmware (MIoT spec objects):
+ * 0x4801 temperature (float, C), 0x4802 humidity (u8 %), 0x4C03 battery (u8 %).
+ * Frame control 0x5958 (registered, auth mode 2, v5, encrypted, MAC, object);
+ * the 4-byte temperature object is sent without MAC (0x5948) to fit legacy advertising. */
+__attribute__((optimize("-Os")))
+void mi_encrypt_data_beacon(void) {
+	u8 obj[3 + 4];
+	u8 olen;
+	u16 fctrl;
+	beacon_nonce.cnt32 = adv_buf.send_count;
+	adv_buf.update_count = -1; // next call only at next measurement
+	if (++mi_beacon_data.stage > 2) {
+		mi_beacon_data.stage = 0;
+		if(mib_summ_data.count) {
+			s16 t = (s16)(mib_summ_data.temp/(s32)mib_summ_data.count); // x0.01 C
+			mi_beacon_data.temp = (t + ((t < 0) ? -5 : 5))/10; // x0.1 C, rounded half away from zero
+			mi_beacon_data.humi = ((u16)(mib_summ_data.humi/mib_summ_data.count)  + 5)/10;
+			mi_beacon_data.batt = get_battery_level((u16)(mib_summ_data.batt/mib_summ_data.count));
+			memset(&mib_summ_data, 0, sizeof(mib_summ_data));
+		} else {
+			mi_beacon_data.temp = measured_data.temp_x01;
+			mi_beacon_data.humi = measured_data.humi_x01;
+			mi_beacon_data.batt = measured_data.battery_level;
+		}
+	}
+	switch (mi_beacon_data.stage) {
+		case 0: {
+			u32 f = mi_float_x01(mi_beacon_data.temp);
+			obj[0] = 0x01; obj[1] = 0x48; // siid 2, piid 1001
+			olen = 4;
+			obj[3] = (u8)f; obj[4] = (u8)(f >> 8); obj[5] = (u8)(f >> 16); obj[6] = (u8)(f >> 24);
+			break;
+		}
+		case 1:
+			obj[0] = 0x02; obj[1] = 0x48; // siid 2, piid 1002
+			olen = 1;
+			obj[3] = (u8)((mi_beacon_data.humi + 5) / 10);
+			break;
+		default:
+			obj[0] = 0x03; obj[1] = 0x4c; // siid 3, piid 1003
+			olen = 1;
+			obj[3] = mi_beacon_data.batt;
+			break;
+	}
+	obj[2] = olen;
+	fctrl = (olen > 3) ? 0x5948 : 0x5958;
+	u8 *p = adv_buf.data;
+	u8 *q = &p[2];
+	p[1] = GAP_ADTYPE_SERVICE_DATA_UUID_16BIT;
+	*q++ = (u8)ADV_XIAOMI_UUID16;
+	*q++ = (u8)(ADV_XIAOMI_UUID16 >> 8);
+	*q++ = (u8)fctrl;
+	*q++ = (u8)(fctrl >> 8);
+	*q++ = (u8)beacon_nonce.pid;
+	*q++ = (u8)(beacon_nonce.pid >> 8);
+	*q++ = beacon_nonce.cnt;
+	if (fctrl & 0x10) {
+		memcpy(q, mac_public, 6);
+		q += 6;
+	}
+	u8 *enc = q;
+	q += olen + 3;
+	*q++ = beacon_nonce.ext_cnt[0];
+	*q++ = beacon_nonce.ext_cnt[1];
+	*q++ = beacon_nonce.ext_cnt[2];
+	u8 aad = 0x11;
+	aes_ccm_encrypt_and_tag((const unsigned char *)&bindkey,
+						   (u8*)&beacon_nonce, sizeof(beacon_nonce),
+						   &aad, sizeof(aad),
+						   obj, olen + 3,
+						   enc,
+						   q, 4);
+	q += 4;
+	p[0] = (u8)(q - p) - 1;
+}
+#else
 /* Create encrypted mi beacon packet */
 __attribute__((optimize("-Os")))
 void mi_encrypt_data_beacon(void) {
@@ -157,6 +258,7 @@ void mi_encrypt_data_beacon(void) {
 						   (u8 *)&p->data, // указатель куда писать результат
 						   pmic, 4); // указатель куда писать типа подпись-"контрольную сумму" шифра
 }
+#endif // USE_MIHOME_SPEC_BEACON
 #if (DEV_SERVICES & SERVICE_RDS)
 /* n - RDS_TYPES */
 void mi_encrypt_event_beacon(u8 n) {

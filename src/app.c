@@ -810,17 +810,27 @@ extern int soft_i2c_send_byte(u8 addr, u8 b);
 
 #if (DEV_SERVICES & SERVICE_BINDKEY)
 void bindkey_init(void) {
-	if (flash_read_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey))
-			!= sizeof(bindkey)) {
 #if USE_MI_AUTH
-		// default = MiHome bindkey from the Mi key record (token[12] + bindkey[16])
-		if (find_mi_keys(MI_KEYTBIND_ID, 1) && keybuf.klen >= MI_KEYTBIND_SIZE)
+	int ok = flash_read_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey)) == sizeof(bindkey);
+	// MiHome and Mi BLE gateways only accept the bindkey of the Mi cloud (Mi key record: token[12] + bindkey[16])
+	if (find_mi_keys(MI_KEYTBIND_ID, 1) && keybuf.klen >= MI_KEYTBIND_SIZE) {
+		if (!ok || memcmp(bindkey, &keybuf.data[12], sizeof(bindkey))) {
 			memcpy(bindkey, &keybuf.data[12], sizeof(bindkey));
-		else
-#endif
+			flash_write_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey));
+		}
+		ok = 1;
+	}
+	if (!ok) {
 		generateRandomNum(sizeof(bindkey), bindkey);
 		flash_write_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey));
 	}
+#else
+	if (flash_read_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey))
+			!= sizeof(bindkey)) {
+		generateRandomNum(sizeof(bindkey), bindkey);
+		flash_write_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey));
+	}
+#endif
 #if	USE_MIHOME_BEACON
 	mi_beacon_init();
 #endif // USE_MIHOME_BEACON

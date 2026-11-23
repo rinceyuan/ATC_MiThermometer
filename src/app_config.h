@@ -2670,6 +2670,9 @@ GPIO_D7 - SDA
 #ifndef USE_MI_AUTH
 #define USE_MI_AUTH			1 // MiHome app: Mi standard-auth login + ebe0ccb0 data service
 #endif
+#ifndef USE_MIHOME_SPEC_BEACON
+#define USE_MIHOME_SPEC_BEACON	USE_MI_AUTH // encrypted MiBeacon as the original firmware (MIoT spec objects) for Mi BLE gateways
+#endif
 
 #define USE_SENSOR_CHT8305		0
 #define USE_SENSOR_CHT8215		0
@@ -3714,6 +3717,12 @@ GPIO_PD7 - LED to +Vbat
 #endif
 #if USE_MI_AUTH && !(DEV_SERVICES & SERVICE_MI_KEYS)
 #error "USE_MI_AUTH requires SERVICE_MI_KEYS (token from Mi key records)"
+#endif
+#ifndef USE_MIHOME_SPEC_BEACON
+#define USE_MIHOME_SPEC_BEACON	0 // = 1 encrypted MiBeacon with MIoT spec objects (0x4801/0x4802/0x4C03)
+#endif
+#if USE_MIHOME_SPEC_BEACON && !(USE_MIHOME_BEACON && (DEV_SERVICES & SERVICE_BINDKEY))
+#error "USE_MIHOME_SPEC_BEACON requires USE_MIHOME_BEACON and SERVICE_BINDKEY"
 #endif
 #ifndef USE_BTHOME_BEACON
 #define USE_BTHOME_BEACON	1 // = 1 BTHome v2 https://bthome.io/
