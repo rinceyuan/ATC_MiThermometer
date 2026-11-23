@@ -5,6 +5,9 @@
 #include "ble.h"
 #include "vendor/common/blt_common.h"
 #include "cmd_parser.h"
+#if USE_MI_AUTH
+#include "mi_auth.h"
+#endif
 #include "lcd.h"
 #include "app.h"
 #include "flash_eep.h"
@@ -81,6 +84,9 @@ void ble_disconnect_callback(u8 e, u8 *p, int n) {
 	wrk.ble_connected = 0;
 	wrk.ota_is_working = OTA_NONE;
 	mi_key_stage = 0;
+#if USE_MI_AUTH
+	mi_auth_reset();
+#endif
 #if (DEV_SERVICES & SERVICE_SCREEN)
 	lcd_flg.all_flg = 0;
 #endif
@@ -123,6 +129,9 @@ void ble_connect_callback(u8 e, u8 *p, int n) {
 
 	wrk.ble_connected = BIT(CONNECTED_FLG_ENABLE);
 	wrk.tim_measure = clock_time();
+#if USE_MI_AUTH
+	mi_auth_reset();
+#endif
 #if USE_SYNC_SCAN
 	scan_stop(); // stop scan
 #endif

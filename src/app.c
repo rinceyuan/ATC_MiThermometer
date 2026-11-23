@@ -3,6 +3,9 @@
 #include "stack/ble/ble.h"
 #include "vendor/common/blt_common.h"
 #include "cmd_parser.h"
+#if USE_MI_AUTH
+#include "mi_auth.h"
+#endif
 #include "flash_eep.h"
 #include "battery.h"
 #include "ble.h"
@@ -270,6 +273,9 @@ const cfg_t def_cfg = {
 
 #elif DEVICE_TYPE == DEVICE_MJWSD06MMC
 		.flg2.adv_flags = true,
+#if USE_MI_AUTH
+		.flg2.adv_crypto = true, // MiHome: encrypted MiBeacon, bindkey from the Mi key record
+#endif
 		.advertising_interval = 80, // multiply by 62.5 ms = 5 sec
 		.measure_interval = 4, // * advertising_interval = 20 sec
 		.min_step_time_update_lcd = 49, //x0.05 sec,   2.45 sec
@@ -806,6 +812,12 @@ extern int soft_i2c_send_byte(u8 addr, u8 b);
 void bindkey_init(void) {
 	if (flash_read_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey))
 			!= sizeof(bindkey)) {
+#if USE_MI_AUTH
+		// default = MiHome bindkey from the Mi key record (token[12] + bindkey[16])
+		if (find_mi_keys(MI_KEYTBIND_ID, 1) && keybuf.klen >= MI_KEYTBIND_SIZE)
+			memcpy(bindkey, &keybuf.data[12], sizeof(bindkey));
+		else
+#endif
 		generateRandomNum(sizeof(bindkey), bindkey);
 		flash_write_cfg(bindkey, EEP_ID_KEY, sizeof(bindkey));
 	}
@@ -1259,6 +1271,9 @@ void main_loop(void) {
 					}
 					if (batteryValueInCCC)
 						ble_send_battery();
+#if USE_MI_AUTH
+					mi_th_notify();
+#endif
 #if (DEV_SERVICES & (SERVICE_THS | SERVICE_18B20 | SERVICE_PLM))
 					if (tempValueInCCC)
 						ble_send_temp01();

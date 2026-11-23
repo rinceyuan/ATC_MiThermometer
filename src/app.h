@@ -37,7 +37,11 @@ enum {
 	ADV_TYPE_BTHOME // (default)
 } ADV_TYPE_ENUM;
 
+#if USE_MI_AUTH
+#define ADV_TYPE_DEFAULT	ADV_TYPE_MI // MiHome: MiBeacon (encrypted, see def_cfg)
+#else
 #define ADV_TYPE_DEFAULT	ADV_TYPE_BTHOME
+#endif
 
 // cfg.flg
 #define MASK_FLG_LP_MSR	   0x80 // lp_measures

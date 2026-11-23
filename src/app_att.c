@@ -2,6 +2,9 @@
 
 #include "stack/ble/ble.h"
 #include "ble.h"
+#if USE_MI_AUTH
+#include "mi_auth.h"
+#endif
 
 static const u16 clientCharacterCfgUUID = GATT_UUID_CLIENT_CHAR_CFG; // 2902
 
@@ -440,7 +443,53 @@ RAM u16 RxTxValueInCCC;
 
 // MI 0x95FE
 static const u16 mi_primary_service_uuid = 0xfe95;
-#if (!defined(USE_MIHOME) || USE_MIHOME == 0)
+#if USE_MI_AUTH
+static const u16 mi_ver_uuid = MI_UUID_VERSION;
+static const u16 mi_auth_uuid = MI_UUID_AUTH;
+static const u16 mi_std_uuid = MI_UUID_STANDARD;
+static const u8 mi_ver_CharVal[5] = {
+	CHAR_PROP_READ,
+	U16_LO(Mi_VER_DP_H), U16_HI(Mi_VER_DP_H),
+	U16_LO(MI_UUID_VERSION), U16_HI(MI_UUID_VERSION)
+};
+static const u8 mi_auth_CharVal[5] = {
+	CHAR_PROP_WRITE_WITHOUT_RSP | CHAR_PROP_NOTIFY,
+	U16_LO(Mi_AUTH_DP_H), U16_HI(Mi_AUTH_DP_H),
+	U16_LO(MI_UUID_AUTH), U16_HI(MI_UUID_AUTH)
+};
+static const u8 mi_std_CharVal[5] = {
+	CHAR_PROP_WRITE_WITHOUT_RSP | CHAR_PROP_NOTIFY,
+	U16_LO(Mi_STD_DP_H), U16_HI(Mi_STD_DP_H),
+	U16_LO(MI_UUID_STANDARD), U16_HI(MI_UUID_STANDARD)
+};
+// ebe0ccXX-7a0a-4b0c-8a1a-6ff2997da3a6 (LE)
+#define MI_TH_UUID128(x) 0xa6,0xa3,0x7d,0x99,0xf2,0x6f,0x1a,0x8a,0x0c,0x4b,0x0a,0x7a,x,0xcc,0xe0,0xeb
+static const u8 mi_th_service_uuid[16] = {MI_TH_UUID128(0xb0)};
+static const u8 mi_th_time_uuid[16] = {MI_TH_UUID128(0xb7)};
+static const u8 mi_th_tunit_uuid[16] = {MI_TH_UUID128(0xbe)};
+static const u8 mi_th_data_uuid[16] = {MI_TH_UUID128(0xc1)};
+static const u8 mi_th_bat_uuid[16] = {MI_TH_UUID128(0xc4)};
+static const u8 mi_th_time_CharVal[19] = {
+	CHAR_PROP_READ | CHAR_PROP_WRITE,
+	U16_LO(MiTH_TIME_DP_H), U16_HI(MiTH_TIME_DP_H),
+	MI_TH_UUID128(0xb7)
+};
+static const u8 mi_th_tunit_CharVal[19] = {
+	CHAR_PROP_READ | CHAR_PROP_WRITE,
+	U16_LO(MiTH_TUNIT_DP_H), U16_HI(MiTH_TUNIT_DP_H),
+	MI_TH_UUID128(0xbe)
+};
+static const u8 mi_th_data_CharVal[19] = {
+	CHAR_PROP_READ | CHAR_PROP_NOTIFY,
+	U16_LO(MiTH_DATA_DP_H), U16_HI(MiTH_DATA_DP_H),
+	MI_TH_UUID128(0xc1)
+};
+static const u8 mi_th_bat_CharVal[19] = {
+	CHAR_PROP_READ,
+	U16_LO(MiTH_BAT_DP_H), U16_HI(MiTH_BAT_DP_H),
+	MI_TH_UUID128(0xc4)
+};
+#elif (!defined(USE_MIHOME) || USE_MIHOME == 0)
 static const u8  my_MiName[] = {'M', 'i'};
 #endif
 
@@ -616,9 +665,33 @@ RAM attribute_t my_Attributes[] = {
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(my_RxTxCharVal),(u8*)(&my_characterUUID),	(u8*)(my_RxTxCharVal), 0},				//prop
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(my_RxTx_Data),(u8*)(&my_RxTxUUID), (u8*)&my_RxTx_Data, &RxTxWrite, 0},
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(RxTxValueInCCC),(u8*)(&clientCharacterCfgUUID), 	(u8*)(&RxTxValueInCCC), 0},	//value
+#if USE_MI_AUTH
+	//Mi 0x95FE: version, auth (login), standard (framed transfer)
+	{9,ATT_PERMISSIONS_READ, 2,2,(u8*)(&my_primaryServiceUUID),(u8*)(&mi_primary_service_uuid), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_ver_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_ver_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_version_str),(u8*)(&mi_ver_uuid),(u8*)(mi_version_str), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_auth_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_auth_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_auth_val),(u8*)(&mi_auth_uuid),(u8*)(mi_auth_val), &mi_auth_write, 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_auth_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_auth_ccc), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_std_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_std_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_std_val),(u8*)(&mi_std_uuid),(u8*)(mi_std_val), &mi_std_write, 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_std_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_std_ccc), 0},
+	// Mi data service ebe0ccb0 (original firmware compatible)
+	{10,ATT_PERMISSIONS_READ, 2,16,(u8*)(&my_primaryServiceUUID),(u8*)(mi_th_service_uuid), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_time_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_time_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(wrk.utc_time_sec),(u8*)(mi_th_time_uuid),(u8*)(&wrk.utc_time_sec), &mi_time_write, 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_tunit_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_tunit_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_tunit_val),(u8*)(mi_th_tunit_uuid),(u8*)(&mi_tunit_val), &mi_tunit_write, 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_data_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_data_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ,16,sizeof(mi_th_val),(u8*)(mi_th_data_uuid),(u8*)(mi_th_val), 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_th_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_th_ccc), 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_bat_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_bat_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ,16,sizeof(measured_data.battery_level),(u8*)(mi_th_bat_uuid),(u8*)(&measured_data.battery_level), 0},
+#else
 	//Mi 0x95FE
 	{2,ATT_PERMISSIONS_READ, 2,2,(u8*)(&my_primaryServiceUUID),(u8*)(&mi_primary_service_uuid), 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof (my_MiName),(u8*)(&userdesc_UUID),(u8*)(my_MiName), 0},
+#endif
 };
 
 void my_att_init(void) {

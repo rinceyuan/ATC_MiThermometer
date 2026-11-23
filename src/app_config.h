@@ -2667,6 +2667,9 @@ GPIO_D7 - SDA
 
 #define USE_EPD				0 // min update time ms
 #define USE_RC_VBAT			0
+#ifndef USE_MI_AUTH
+#define USE_MI_AUTH			1 // MiHome app: Mi standard-auth login + ebe0ccb0 data service
+#endif
 
 #define USE_SENSOR_CHT8305		0
 #define USE_SENSOR_CHT8215		0
@@ -3705,6 +3708,12 @@ GPIO_PD7 - LED to +Vbat
 #endif
 #ifndef USE_MIHOME_BEACON
 #define USE_MIHOME_BEACON	1 // = 1 Compatible with MiHome beacon
+#endif
+#ifndef USE_MI_AUTH
+#define USE_MI_AUTH			0 // = 1 MiHome app connection: Mi standard-auth login (FE95) + ebe0ccb0 data service
+#endif
+#if USE_MI_AUTH && !(DEV_SERVICES & SERVICE_MI_KEYS)
+#error "USE_MI_AUTH requires SERVICE_MI_KEYS (token from Mi key records)"
 #endif
 #ifndef USE_BTHOME_BEACON
 #define USE_BTHOME_BEACON	1 // = 1 BTHome v2 https://bthome.io/

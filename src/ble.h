@@ -167,10 +167,37 @@ typedef enum
 	RxTx_CMD_OUT_DP_H,						//UUID: 1F1F,  VALUE: RxTxData
 	RxTx_CMD_OUT_DESC_H,					//UUID: 2902, 	VALUE: RxTxValueInCCC
 
+#if USE_MI_AUTH
+	//// Xiaomi service 0xFE95 (Mi standard-auth login) ////
+	/**********************************************************************************************/
+	Mi_PS_H, 								//UUID: 2800, 	VALUE: 0xFE95 service uuid
+	Mi_VER_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read
+	Mi_VER_DP_H,							//UUID: 0004,	VALUE: firmware version string
+	Mi_AUTH_CD_H,							//UUID: 2803, 	VALUE:  			Prop: write_without_rsp | Notify
+	Mi_AUTH_DP_H,							//UUID: 0010,	VALUE: auth command / status
+	Mi_AUTH_CCB_H,							//UUID: 2902, 	VALUE: mi_auth_ccc
+	Mi_STD_CD_H,							//UUID: 2803, 	VALUE:  			Prop: write_without_rsp | Notify
+	Mi_STD_DP_H,							//UUID: 0019,	VALUE: framed transfer ("standard")
+	Mi_STD_CCB_H,							//UUID: 2902, 	VALUE: mi_std_ccc
+
+	//// Xiaomi data service ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6 (as in the original firmware) ////
+	/**********************************************************************************************/
+	MiTH_PS_H,								//UUID: 2800, 	VALUE: ebe0ccb0 service uuid
+	MiTH_TIME_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read | Write
+	MiTH_TIME_DP_H,							//UUID: ebe0ccb7, VALUE: utc time (u32)
+	MiTH_TUNIT_CD_H,						//UUID: 2803, 	VALUE:  			Prop: Read | Write
+	MiTH_TUNIT_DP_H,						//UUID: ebe0ccbe, VALUE: 0 - C, 1 - F
+	MiTH_DATA_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read | Notify
+	MiTH_DATA_DP_H,							//UUID: ebe0ccc1, VALUE: s16 temp x0.01, u8 humi, u16 mV
+	MiTH_DATA_CCB_H,						//UUID: 2902, 	VALUE: mi_th_ccc
+	MiTH_BAT_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read
+	MiTH_BAT_DP_H,							//UUID: ebe0ccc4, VALUE: battery %
+#else
 	// Mi Advertising char
 	/**********************************************************************************************/
 	Mi_PS_H, 								//UUID: 2800, 	VALUE: 0xFE95 service uuid
 	Mi_CMD_OUT_DESC_H,						//UUID: 2901, 	VALUE: my_MiName
+#endif
 
 	ATT_END_H
 
