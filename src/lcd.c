@@ -96,7 +96,7 @@ void lcd(void) {
 			if (cfg.flg.show_batt_enabled
 #if	(DEVICE_TYPE == DEVICE_CGG1) || (DEVICE_TYPE == DEVICE_CGDK2) || (DEVICE_TYPE == DEVICE_LYWSD02MMC)
 #else
-				|| measured_data.battery_level <= 5
+				|| measured_data.battery_level <= LOW_BATTERY_LEVEL
 #endif
 				) { // Battery
 #if	(SHOW_SMILEY)
@@ -158,7 +158,7 @@ void lcd(void) {
 #if	(DEVICE_TYPE == DEVICE_CGG1) || (DEVICE_TYPE == DEVICE_CGDK2) || (DEVICE_TYPE == DEVICE_LKTMZL02) || (DEVICE_TYPE == DEVICE_LYWSD02MMC)
 
 #else
-				|| measured_data.battery_level <= 5
+				|| measured_data.battery_level <= LOW_BATTERY_LEVEL
 #endif
 				) { // Battery
 #if	(SHOW_SMILEY)

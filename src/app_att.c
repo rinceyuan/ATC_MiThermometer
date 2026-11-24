@@ -489,6 +489,43 @@ static const u8 mi_th_bat_CharVal[19] = {
 	U16_LO(MiTH_BAT_DP_H), U16_HI(MiTH_BAT_DP_H),
 	MI_TH_UUID128(0xc4)
 };
+#if (DEV_SERVICES & SERVICE_HISTORY)
+static const u8 mi_th_hcnt_uuid[16] = {MI_TH_UUID128(0xb9)};
+static const u8 mi_th_hidx_uuid[16] = {MI_TH_UUID128(0xba)};
+static const u8 mi_th_hread_uuid[16] = {MI_TH_UUID128(0xbb)};
+static const u8 mi_th_hntf_uuid[16] = {MI_TH_UUID128(0xbc)};
+static const u8 mi_th_hcnt_CharVal[19] = {
+	CHAR_PROP_READ,
+	U16_LO(MiTH_HCNT_DP_H), U16_HI(MiTH_HCNT_DP_H),
+	MI_TH_UUID128(0xb9)
+};
+static const u8 mi_th_hidx_CharVal[19] = {
+	CHAR_PROP_READ | CHAR_PROP_WRITE,
+	U16_LO(MiTH_HIDX_DP_H), U16_HI(MiTH_HIDX_DP_H),
+	MI_TH_UUID128(0xba)
+};
+static const u8 mi_th_hread_CharVal[19] = {
+	CHAR_PROP_READ,
+	U16_LO(MiTH_HREAD_DP_H), U16_HI(MiTH_HREAD_DP_H),
+	MI_TH_UUID128(0xbb)
+};
+static const u8 mi_th_hntf_CharVal[19] = {
+	CHAR_PROP_NOTIFY,
+	U16_LO(MiTH_HNTF_DP_H), U16_HI(MiTH_HNTF_DP_H),
+	MI_TH_UUID128(0xbc)
+};
+#define MI_TH_SRV_ATTS	22
+#else
+#define MI_TH_SRV_ATTS	13
+#endif
+static const u8 mi_th_disc_uuid[16] = {MI_TH_UUID128(0xc8)};
+static const u8 mi_th_disc_CharVal[19] = {
+	CHAR_PROP_WRITE,
+	U16_LO(MiTH_DISC_DP_H), U16_HI(MiTH_DISC_DP_H),
+	MI_TH_UUID128(0xc8)
+};
+static const u8 mi_th_disc_val[4] = {0x0c, 0x0c, 0x0c, 0x08}; // as the original firmware
+static const u8 mi_th_disc_desc[] = {'D','i','s','c','o','n','n','e','c','t'};
 #elif (!defined(USE_MIHOME) || USE_MIHOME == 0)
 static const u8  my_MiName[] = {'M', 'i'};
 #endif
@@ -677,7 +714,7 @@ RAM attribute_t my_Attributes[] = {
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_std_val),(u8*)(&mi_std_uuid),(u8*)(mi_std_val), &mi_std_write, 0},
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_std_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_std_ccc), 0},
 	// Mi data service ebe0ccb0 (original firmware compatible)
-	{10,ATT_PERMISSIONS_READ, 2,16,(u8*)(&my_primaryServiceUUID),(u8*)(mi_th_service_uuid), 0},
+	{MI_TH_SRV_ATTS,ATT_PERMISSIONS_READ, 2,16,(u8*)(&my_primaryServiceUUID),(u8*)(mi_th_service_uuid), 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_time_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_time_CharVal), 0},
 		{0,ATT_PERMISSIONS_RDWR,16,sizeof(wrk.utc_time_sec),(u8*)(mi_th_time_uuid),(u8*)(&wrk.utc_time_sec), &mi_time_write, 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_tunit_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_tunit_CharVal), 0},
@@ -687,6 +724,20 @@ RAM attribute_t my_Attributes[] = {
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_th_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_th_ccc), 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_bat_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_bat_CharVal), 0},
 		{0,ATT_PERMISSIONS_READ,16,sizeof(measured_data.battery_level),(u8*)(mi_th_bat_uuid),(u8*)(&measured_data.battery_level), 0},
+#if (DEV_SERVICES & SERVICE_HISTORY)
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_hcnt_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_hcnt_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ,16,sizeof(mi_hist_count_val),(u8*)(mi_th_hcnt_uuid),(u8*)(mi_hist_count_val), 0, &mi_hist_count_read},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_hidx_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_hidx_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_hist_index_val),(u8*)(mi_th_hidx_uuid),(u8*)(mi_hist_index_val), &mi_hist_index_write, &mi_hist_index_read},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_hread_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_hread_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ,16,sizeof(mi_hist_read_val),(u8*)(mi_th_hread_uuid),(u8*)(mi_hist_read_val), 0, &mi_hist_read_read},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_hntf_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_hntf_CharVal), 0},
+		{0,ATT_PERMISSIONS_READ,16,sizeof(mi_hist_notify_val),(u8*)(mi_th_hntf_uuid),(u8*)(mi_hist_notify_val), 0},
+		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_hist_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_hist_ccc), &mi_hist_ccc_write, 0},
+#endif
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_disc_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_disc_CharVal), 0},
+		{0,ATT_PERMISSIONS_WRITE,16,sizeof(mi_th_disc_val),(u8*)(mi_th_disc_uuid),(u8*)(mi_th_disc_val), &mi_disc_write, 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_disc_desc),(u8*)(&userdesc_UUID),(u8*)(mi_th_disc_desc), 0},
 #else
 	//Mi 0x95FE
 	{2,ATT_PERMISSIONS_READ, 2,2,(u8*)(&my_primaryServiceUUID),(u8*)(&mi_primary_service_uuid), 0},

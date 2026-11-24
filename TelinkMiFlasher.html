@@ -1556,9 +1556,7 @@ function CustomBlkParse(value) {
 			if(devtime.step == 1) {
 				if(devtime.set > 0x60000000) {
 					devtime.period = devtime.cur - devtime.set;
-					let time = Date.now()/1000;
-					time -= (new Date()).getTimezoneOffset() * 60;
-					devtime.cmp = time;
+					devtime.cmp = devTimeNow();
 					let odt = new Date(devtime.set*1000);
 					addAlog('Last clock setting: '+(odt.toISOString().slice(0, -1)).replace('T',' '));
 					addAlog('DevPeriod: ' + devtime.period.toFixed(1) + ' sec');
@@ -2771,7 +2769,9 @@ function getSignFirmwareArray(data, filename) {
 }
 
 
-function ajax_file(filename, fn, rawurl = "https://raw.githubusercontent.com/pvvx/ATC_MiThermometer/master/") {
+// Served over http(s): load firmware.json and binaries from this site (local server or fork pages)
+const OTA_BASE_URL = location.protocol.startsWith("http") ? "" : "https://raw.githubusercontent.com/pvvx/ATC_MiThermometer/master/";
+function ajax_file(filename, fn, rawurl = OTA_BASE_URL) {
 	let xhr;
 	if(window.XMLHttpRequest) xhr = new XMLHttpRequest();
 	else if(window.ActiveXObject) xhr = new ActiveXObject("Microsoft.XMLHTTP")
@@ -3150,9 +3150,15 @@ function lcd_clock() {
 	addClog("Send cmd (60): Set LCD data");
 	settingsCharacteristics.writeValue(lcdb).then(_ => {addClog('Send data ok'); addLog("Send 'Send clock data on LCD' ok");});
 }
-function setDevTime() {
+// Device clock base: local time, but UTC for custom firmware with the MiHome services (as MiHome sets it)
+function devTimeNow() {
 	let time = Date.now()/1000;
-	time -= (new Date()).getTimezoneOffset() * 60;
+	if (!(miEnabled && customEnabled))
+		time -= (new Date()).getTimezoneOffset() * 60;
+	return time;
+}
+function setDevTime() {
+	let time = devTimeNow();
 	blk = new Uint8Array(5);
 	blk[0] = 0x23;
 	blk[1] = time & 0xff;

@@ -228,6 +228,10 @@ typedef struct __attribute__((packed)) _adv_mi_cr_ev2_t {
 } adv_mi_cr_ev2_t, * padv_mi_cr_ev2_t;
 
 void mi_beacon_init(void);
+#if USE_MIHOME_SPEC_BEACON
+void mi_beacon_cnt_init(void);	// power-on: restore the frame counter
+void mi_beacon_cnt_task(void);	// main loop: save the frame counter every 512 frames
+#endif
 void mi_encrypt_data_beacon(void);
 void mi_encrypt_event_beacon(u8 n); // n = RDS_TYPES
 #endif

@@ -192,6 +192,20 @@ typedef enum
 	MiTH_DATA_CCB_H,						//UUID: 2902, 	VALUE: mi_th_ccc
 	MiTH_BAT_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read
 	MiTH_BAT_DP_H,							//UUID: ebe0ccc4, VALUE: battery %
+#if (DEV_SERVICES & SERVICE_HISTORY)
+	MiTH_HCNT_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read
+	MiTH_HCNT_DP_H,							//UUID: ebe0ccb9, VALUE: u32 last index, u32 count
+	MiTH_HIDX_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read | Write
+	MiTH_HIDX_DP_H,							//UUID: ebe0ccba, VALUE: u32 start index
+	MiTH_HREAD_CD_H,						//UUID: 2803, 	VALUE:  			Prop: Read
+	MiTH_HREAD_DP_H,						//UUID: ebe0ccbb, VALUE: newest hourly record
+	MiTH_HNTF_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Notify
+	MiTH_HNTF_DP_H,							//UUID: ebe0ccbc, VALUE: hourly records (notify)
+	MiTH_HNTF_CCB_H,						//UUID: 2902, 	VALUE: mi_hist_ccc
+#endif
+	MiTH_DISC_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Write
+	MiTH_DISC_DP_H,							//UUID: ebe0ccc8, VALUE: 0x88 - terminate connection
+	MiTH_DISC_DESC_H,						//UUID: 2901, 	VALUE: "Disconnect"
 #else
 	// Mi Advertising char
 	/**********************************************************************************************/

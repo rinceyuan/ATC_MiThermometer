@@ -457,6 +457,10 @@ extern attribute_t my_Attributes[ATT_END_H];
 void ble_set_name(void) {
 	s16 len = flash_read_cfg(&ble_name[2], EEP_ID_DVN, min(sizeof(ble_name)-3, MAX_DEV_NAME_LEN));
 	if (len < 1 || len > MAX_DEV_NAME_LEN) {
+#ifdef DEV_NAME_DEFAULT
+		len = sizeof(DEV_NAME_DEFAULT) - 1; // fixed default name (a name set by command / EEP still has priority)
+		memcpy(&ble_name[2], DEV_NAME_DEFAULT, len);
+#else
 		//Set the BLE Name to the last three MACs the first ones are always the same
 #if ((DEVICE_TYPE == DEVICE_MHO_C401) || (DEVICE_TYPE == DEVICE_MHO_C401N) || (DEVICE_TYPE == DEVICE_MHO_C122))
 		ble_name[2] = 'M';
@@ -604,6 +608,7 @@ void ble_set_name(void) {
 		p = str_bin2hex(p, &mac_public[1], 1);
 		p = str_bin2hex(p, &mac_public[0], 1);
 		len = 10;
+#endif // DEV_NAME_DEFAULT
 	}
 	my_Attributes[GenericAccess_DeviceName_DP_H].attrLen = len;
 	ble_name[0] = (u8)(len + 1);

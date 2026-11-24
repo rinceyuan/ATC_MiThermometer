@@ -2673,6 +2673,12 @@ GPIO_D7 - SDA
 #ifndef USE_MIHOME_SPEC_BEACON
 #define USE_MIHOME_SPEC_BEACON	USE_MI_AUTH // encrypted MiBeacon as the original firmware (MIoT spec objects) for Mi BLE gateways
 #endif
+#ifndef USE_MI_BATTERY_CURVE
+#define USE_MI_BATTERY_CURVE	USE_MI_AUTH // battery % as the original firmware (MiHome shows the same value)
+#endif
+#if USE_MI_AUTH && !defined(DEV_NAME_DEFAULT)
+#define DEV_NAME_DEFAULT	"MJ6_Corp" // default BLE name of the "mesh" build (instead of MJ6_xxxxxx)
+#endif
 
 #define USE_SENSOR_CHT8305		0
 #define USE_SENSOR_CHT8215		0
@@ -3718,11 +3724,34 @@ GPIO_PD7 - LED to +Vbat
 #if USE_MI_AUTH && !(DEV_SERVICES & SERVICE_MI_KEYS)
 #error "USE_MI_AUTH requires SERVICE_MI_KEYS (token from Mi key records)"
 #endif
+#if USE_MI_AUTH
+#undef VERSION
+#define VERSION 0x60	 // "mesh" build: MiHome login + Mi BLE gateway beacon (BCD '6.0')
+#endif
 #ifndef USE_MIHOME_SPEC_BEACON
 #define USE_MIHOME_SPEC_BEACON	0 // = 1 encrypted MiBeacon with MIoT spec objects (0x4801/0x4802/0x4C03)
 #endif
 #if USE_MIHOME_SPEC_BEACON && !(USE_MIHOME_BEACON && (DEV_SERVICES & SERVICE_BINDKEY))
 #error "USE_MIHOME_SPEC_BEACON requires USE_MIHOME_BEACON and SERVICE_BINDKEY"
+#endif
+#ifndef USE_MI_BATTERY_CURVE
+#define USE_MI_BATTERY_CURVE	0 // = 1 battery %: 100% above 2700 mV as the original Xiaomi firmware, below linear through its levels
+#endif
+#ifndef LOW_BATTERY_LEVEL
+#if USE_MI_BATTERY_CURVE
+#define LOW_BATTERY_LEVEL	10 // LCD shows the battery at <= 10% (2400 mV, as the original firmware)
+#else
+#define LOW_BATTERY_LEVEL	5  // LCD shows the battery at <= 5%
+#endif
+#endif
+#ifndef USE_MI_TEMP_ROUND
+#define USE_MI_TEMP_ROUND	USE_MI_AUTH // = 1 temperature 0.1 C rounded half away from zero (also negative values)
+#endif
+#ifndef USE_MI_TIME_SAVE
+#define USE_MI_TIME_SAVE	USE_MI_AUTH // = 1 clock saved in flash 0x7A000..0x7BFFF every 5 min (as the original firmware)
+#endif
+#if USE_MI_TIME_SAVE && !USE_MI_AUTH
+#error "USE_MI_TIME_SAVE requires USE_MI_AUTH"
 #endif
 #ifndef USE_BTHOME_BEACON
 #define USE_BTHOME_BEACON	1 // = 1 BTHome v2 https://bthome.io/

@@ -222,7 +222,11 @@ __attribute__((optimize("-Os"))) void show_big_number_x10(s16 number){
 		if (number > 1999 || number < -99) {
 			/* number: -995..-100, 2000..19995 */
 			// round(div 10)
+#if USE_MI_TEMP_ROUND
+			number += (number < 0) ? -5 : 5; // half away from zero, also for negative values
+#else
 			number += 5;
+#endif
 			number /= 10;
 			// show no point: -99..-10, 200..1999
 			display_buff[3] = 0;

@@ -32,6 +32,27 @@ int mi_auth_write(void * p);	// 0x0010 write
 int mi_std_write(void * p);		// 0x0019 write
 int mi_time_write(void * p);	// ebe0ccb7 write
 int mi_tunit_write(void * p);	// ebe0ccbe write
+int mi_disc_write(void * p);	// ebe0ccc8 write: 0x88 - terminate connection
+void mi_time_set(u32 t);		// set clock (UTC); clears the logger on a step back > 1 hour
+#if USE_MI_TIME_SAVE
+void mi_time_load(void);		// power-on: restore the clock saved in flash (0x7A000)
+void mi_time_task(void);		// main loop: save the clock every 5 minutes
+#endif
+
+#if (DEV_SERVICES & SERVICE_HISTORY)
+extern u8 mi_hist_count_val[8];		// ebe0ccb9
+extern u8 mi_hist_index_val[4];		// ebe0ccba
+extern u8 mi_hist_read_val[14];		// ebe0ccbb
+extern u8 mi_hist_notify_val[14];	// ebe0ccbc
+extern u16 mi_hist_ccc;
+int mi_hist_count_read(void * p);
+int mi_hist_index_write(void * p);
+int mi_hist_index_read(void * p);
+int mi_hist_read_read(void * p);
+int mi_hist_ccc_write(void * p);
+u8 mi_hist_busy(void);
+void mi_hist_task(void);		// main loop: send next hourly record
+#endif
 
 void mi_auth_reset(void);		// on connect / disconnect
 void mi_th_update(void);		// refresh ebe0ccc1/ebe0ccbe values

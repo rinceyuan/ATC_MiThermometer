@@ -11,9 +11,9 @@ make -s -j PROJECT_NAME=BTH%SWVER% POJECT_DEF="-DDEVICE_TYPE=DEVICE_MJWSD05MMC"
 @del /Q "BTE%SWVER%.bin"
 make -s -j PROJECT_NAME=BTE%SWVER% POJECT_DEF="-DDEVICE_TYPE=DEVICE_MJWSD05MMC_EN"
 @if not exist "BTE%SWVER%.bin" goto :error
-@del /Q "MJ6%SWVER%.bin"
-make -s -j PROJECT_NAME=MJ6%SWVER% POJECT_DEF="-DDEVICE_TYPE=DEVICE_MJWSD06MMC"
-@if not exist "MJ6%SWVER%.bin" goto :error
+@del /Q "MJ6_v60_mesh.bin"
+make -s -j PROJECT_NAME=MJ6_v60_mesh POJECT_DEF="-DDEVICE_TYPE=DEVICE_MJWSD06MMC"
+@if not exist "MJ6_v60_mesh.bin" goto :error
 @del /Q "CGDK2%SWVER%.bin"
 make -s -j PROJECT_NAME=CGDK2%SWVER% POJECT_DEF="-DDEVICE_TYPE=DEVICE_CGDK2"
 @if not exist "CGDK2%SWVER%.bin" goto :error

@@ -23,6 +23,9 @@
 #if USE_MIHOME_BEACON
 #include "mi_beacon.h"
 #endif
+#if USE_MI_AUTH
+#include "mi_auth.h"
+#endif
 #include "cmd_parser.h"
 #if (DEV_SERVICES & SERVICE_OTA_EXT)
 #include "ext_ota.h"
@@ -583,9 +586,15 @@ void cmd_parser(void * p) {
 		} else if (cmd == CMD_ID_UTC_TIME) { // Get/set utc time
 			if (len) {
 				if (len > sizeof(wrk.utc_time_sec)) len = sizeof(wrk.utc_time_sec);
+#if USE_MI_AUTH
+				u32 t = wrk.utc_time_sec;
+				memcpy(&t, &req->dat[1], len);
+				mi_time_set(t);
+#else
 				memcpy(&wrk.utc_time_sec, &req->dat[1], len);
 #if (DEV_SERVICES & SERVICE_TIME_ADJUST)
 				utc_set_time_sec = wrk.utc_time_sec;
+#endif
 #endif
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 				rtc_set_utime(wrk.utc_time_sec);

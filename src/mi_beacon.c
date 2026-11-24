@@ -56,6 +56,9 @@ RAM mib_summ_data_t mib_summ_data;
 void mi_beacon_init(void) {
 	memcpy(beacon_nonce.mac, mac_public, 6);
 	beacon_nonce.pid = XIAOMI_DID;
+#if USE_MIHOME_SPEC_BEACON
+	mi_beacon_data.stage = 2; // the first frame computes the values (otherwise humidity / battery 0 are sent first)
+#endif
 }
 
 /* Averaging measurements */
@@ -75,6 +78,46 @@ void mi_beacon_summ(void) {
 }
 
 #if USE_MIHOME_SPEC_BEACON
+#include "flash_eep.h"
+#include "cmd_parser.h"
+
+/* Frame counter: Mi gateways drop frames whose counter is not above the last one received,
+ * so it must keep increasing across reboots (as the original firmware: saved every 512 frames,
+ * + 512 at power-on). The first start continues after the original firmware's counter
+ * (Mi key record SEQNUM) or at least MI_BCNT_FIRST (above the counters of earlier custom builds). */
+#define MI_BCNT_SAVE_STEP	0x200
+#define MI_BCNT_FIRST		0x10000
+RAM u32 mi_bcnt_saved;
+
+void mi_beacon_cnt_init(void) {
+	u32 c = 0;
+	if (flash_read_cfg(&c, EEP_ID_MBC, sizeof(c)) == sizeof(c))
+		c += 2 * MI_BCNT_SAVE_STEP;
+	else {
+#if (DEV_SERVICES & SERVICE_MI_KEYS)
+		if (find_mi_keys(MI_KEYSEQNUM_ID, 1) && keybuf.klen >= sizeof(c))
+			memcpy(&c, keybuf.data, sizeof(c));
+#endif
+		c += MI_BCNT_SAVE_STEP;
+		if (c < MI_BCNT_FIRST)
+			c = MI_BCNT_FIRST;
+	}
+	if (c <= adv_buf.send_count) // called again at runtime (bindkey command)
+		c = adv_buf.send_count + MI_BCNT_SAVE_STEP;
+	adv_buf.send_count = c;
+	mi_bcnt_saved = c;
+	flash_write_cfg(&c, EEP_ID_MBC, sizeof(c));
+}
+
+/* main loop */
+void mi_beacon_cnt_task(void) {
+	u32 c = adv_buf.send_count;
+	if (c - mi_bcnt_saved >= MI_BCNT_SAVE_STEP) {
+		mi_bcnt_saved = c;
+		flash_write_cfg(&c, EEP_ID_MBC, sizeof(c));
+	}
+}
+
 /* IEEE754 single of (v10 / 10), v10 = value x0.1 (integer only, rounded to nearest) */
 u32 mi_float_x01(s16 v10) {
 	u32 sign = 0, a, v, m;

@@ -624,7 +624,11 @@ void read_sensors(void) {
 			if(!sensor_co2.measure_timeout)
 #endif
 			{
+#if USE_MI_TEMP_ROUND
+				measured_data.temp_x01 = (measured_data.temp + ((measured_data.temp < 0) ? -5 : 5)) / 10;
+#else
 				measured_data.temp_x01 = (measured_data.temp + 5)/ 10;
+#endif
 				measured_data.humi_x01 = (measured_data.humi + 5)/ 10;
 				measured_data.humi_x1 = (measured_data.humi + 50)/ 100;
 #elif (DEV_SERVICES & SERVICE_18B20)
@@ -833,6 +837,9 @@ void bindkey_init(void) {
 #endif
 #if	USE_MIHOME_BEACON
 	mi_beacon_init();
+#if USE_MIHOME_SPEC_BEACON
+	mi_beacon_cnt_init();
+#endif
 #endif // USE_MIHOME_BEACON
 #if USE_BTHOME_BEACON
 	bthome_beacon_init();
@@ -1001,6 +1008,9 @@ void user_init_normal(void) {//this will get executed one time after power up
 #if (DEV_SERVICES & SERVICE_HISTORY)
 	memo_init();
 #endif
+#if USE_MI_TIME_SAVE
+	mi_time_load();
+#endif
 #if	(DEV_SERVICES & SERVICE_HARD_CLOCK)
 	init_rtc();
 #endif
@@ -1077,6 +1087,12 @@ void main_loop(void) {
 		}
 #endif
 	}
+#if USE_MIHOME_SPEC_BEACON
+	mi_beacon_cnt_task();
+#endif
+#if USE_MI_TIME_SAVE
+	mi_time_task();
+#endif
 #if SENSOR_SLEEP_MEASURE
 	if(sensor_cfg.time_measure && (clock_time() - sensor_cfg.time_measure > sensor_cfg.measure_timeout))
 		WakeupLowPowerCb(0);
@@ -1305,6 +1321,10 @@ void main_loop(void) {
 #if (DEV_SERVICES & SERVICE_MI_KEYS)
 				} else if (mi_key_stage) {
 					mi_key_stage = get_mi_keys(mi_key_stage);
+#endif
+#if USE_MI_AUTH && (DEV_SERVICES & SERVICE_HISTORY)
+				} else if (mi_hist_busy()) {
+					mi_hist_task();
 #endif
 #if (DEV_SERVICES & SERVICE_SCREEN)
 				} else if (RxTxValueInCCC) {
