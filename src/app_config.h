@@ -2650,6 +2650,23 @@ GPIO_D7 - SDA
 // GPIO_PC4 - Vbat (+V-R/RC-GND)
 // GPIO_PD2 - KEY to GND
 // GPIO_PD7 - free, pcb mark "T" (Trigger, output)
+#ifndef USE_MI_AUTH
+#define USE_MI_AUTH			1 // MiHome app: Mi standard-auth login + ebe0ccb0 data service
+#endif
+#if USE_MI_AUTH
+/* MiHome build: without LE Long Range (MiHome / Mi gateways use legacy advertising only),
+ * reed switch, trigger output and pincode (a pincode locks out MiHome): -6 KB retention RAM */
+#define DEV_SERVICES ( SERVICE_OTA \
+		| SERVICE_OTA_EXT \
+		| SERVICE_BINDKEY \
+		| SERVICE_HISTORY \
+		| SERVICE_SCREEN \
+		| SERVICE_THS \
+		| SERVICE_KEY \
+		| SERVICE_TIME_ADJUST \
+		| SERVICE_MI_KEYS \
+)
+#else
 #define DEV_SERVICES ( SERVICE_OTA \
 		| SERVICE_OTA_EXT \
 		| SERVICE_PINCODE \
@@ -2664,12 +2681,10 @@ GPIO_D7 - SDA
 		| SERVICE_TH_TRG \
 		| SERVICE_MI_KEYS \
 )
+#endif
 
 #define USE_EPD				0 // min update time ms
 #define USE_RC_VBAT			0
-#ifndef USE_MI_AUTH
-#define USE_MI_AUTH			1 // MiHome app: Mi standard-auth login + ebe0ccb0 data service
-#endif
 #ifndef USE_MIHOME_SPEC_BEACON
 #define USE_MIHOME_SPEC_BEACON	USE_MI_AUTH // encrypted MiBeacon as the original firmware (MIoT spec objects) for Mi BLE gateways
 #endif

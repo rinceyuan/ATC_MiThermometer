@@ -33,7 +33,9 @@ MD_TEMP = 2
 WRK_UTC, WRK_CONN = 0, 28
 LCDF_STAGE = 12
 SENS_TIME_MEASURE = 26
-ADVB_COUNT, ADVB_DATA = 0, 12
+ADVB_COUNT = 0
+# adv_buf size -> offset of data[]: with SERVICE_LE_LR (ext_adv_init, 59-byte buffer) / without (28-byte buffer)
+ADVB_DATA = {71: 12, 39: 11}
 
 # cfg.flg bits
 F_COMFORT, F_CLOCK, F_FAHR, F_BATT = 0x04, 0x08, 0x10, 0x20
@@ -284,7 +286,7 @@ class Firmware:
                 'humi_x01': h01, 'humi_x1': h1, 'batt': lvl, 'c1': c1}
 
     def _decode_beacon(self):
-        d = self.read('adv_buf', ADVB_DATA, 31)
+        d = self.read('adv_buf', ADVB_DATA[self.sym['adv_buf'][1]], 31)
         if d[1] != 0x16 or d[2:4] != b'\x95\xfe':
             return
         v = d[4:1 + d[0]]  # service data after the 0xFE95 UUID

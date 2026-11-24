@@ -118,6 +118,9 @@ def selftest(elf, binf):
               f'{int.from_bytes(v["c1"][3:], "little")} mV)')
     for _ in range(3):
         f.measure()
+    if f.has_beacon and 0x4801 not in f.beacon:
+        print('  [FAIL] no decryptable MiBeacon in adv_buf')
+        ok = False
     if 0x4801 in f.beacon:
         print('  MiBeacon (decrypted):', {hex(k): (round(a, 2) if isinstance(a, float) else a)
                                          for k, (a, c, fc) in f.beacon.items()})

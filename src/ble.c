@@ -120,6 +120,10 @@ void ble_disconnect_callback(u8 e, u8 *p, int n) {
 		ev_adv_timeout(0,0,0);
 	}
 #endif // #if (DEV_SERVICES & SERVICE_KEY) || (DEV_SERVICES & SERVICE_RDS)
+#elif (DEV_SERVICES & SERVICE_KEY) || (DEV_SERVICES & SERVICE_RDS)
+	// the connection may have followed a key press (1 s connectable adv.): restore the default adv. interval
+	set_adv_con_time(1);
+	bls_pm_setManualLatency(0);
 #endif // #if (DEV_SERVICES & SERVICE_LE_LR)
 	SHOW_CONNECTED_SYMBOL(false);
 }

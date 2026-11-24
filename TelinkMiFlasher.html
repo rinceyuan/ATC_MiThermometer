@@ -98,6 +98,7 @@ function resetVariables() {
 	pincode.enable = false;
 	cfg.enable = false;
 	cfg.zbdevice = false;
+	cfg.services = 0;
 	trg.enable = false;
 	trg.rds2_enable = false;
 	cmf.enable = false;
@@ -1223,6 +1224,7 @@ function CustomBlkParse(value) {
 			setStatus(s);
 			menuUpgrade();
 		}
+		if(!cfg.zbdevice && cfg.enable) CustomConfig(); // show only the options of the supported services
 	} else if(blkid == 0x33 && len >= 8) {
 		let vbat = value.getUint16(1, true);
 		let s = '';
@@ -1851,7 +1853,9 @@ function customAction() {
 					$("ldfile").hidden = false;
 					addClog("Send cmd (3303): Query 200 measurements");
 					settingsCharacteristics.writeValue(new Uint8Array([0x33,0xC8]))
-					.then(_ => {addClog('Send cmd ok');})
+					.then(_ => {addClog('Send cmd ok');
+						addClog('Send cmd (00): Get dev id, services');
+						return settingsCharacteristics.writeValue(new Uint8Array([0x00]));})
 					.catch(error => addClog(error));
 				}).catch(error => { addClog(error);
 					addLog("Detected alternative Firmware? Use: https://pvvx.github.io/ATC_MiThermometer/TelinkOTA.html");
@@ -3724,6 +3728,11 @@ function zbdeviceConfig() {
 	}
 	$("cfg_meas_int").value = String(cfg.measure_interval);
 }
+// supported services reported by the device (CMD_ID_DEV_ID, dev_services_t); unknown (0) -> all
+function srvOk(bits) { return !cfg.services || (cfg.services & bits) != 0; }
+function setChk(id, v) { let e = $(id); if(e) e.checked = v; }
+function getChk(id) { let e = $(id); return e ? e.checked : false; }
+
 function CustomConfig() {
  menuUpgrade();
  let is = '';
@@ -3806,7 +3815,7 @@ function CustomConfig() {
 	}
 	if(cfg.ver >= 0x36) {
 		if(cfg.ver >= 0x42)
-			is += 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags">, LE Long Range (only for BT5.0+ adapters!): <input title="Enable Extended Advertising Long Range (Coded PHY S8)" type="checkbox" id="longrange_flags"><br><br>';
+			is += 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags">' + (srvOk(0x40) ? ', LE Long Range (only for BT5.0+ adapters!): <input title="Enable Extended Advertising Long Range (Coded PHY S8)" type="checkbox" id="longrange_flags">' : '') + '<br><br>';
 		else if(cfg.ver >= 0x40)
 			is += 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags"><br><br>';
 		else
@@ -3890,8 +3899,11 @@ function CustomConfig() {
 			is += '<br> <button type="button" title="Get/read TrScIn setings" onclick="getTrScConfig();">Get</button>';
 			is += ' <button type="button" title="Set/save TrScIn setings" onclick="setTrScConfig();">Set</button><br>';
 		}
+	}
+	if(srvOk(0x4100)) { // SERVICE_TH_TRG | SERVICE_RDS
+	if((hwver_id == 0)||(hwver_id == 3)||(hwver_id == 4)||(hwver_id == 5)||(hwver_id == 10)||(hwver_id == 14))
 		is += '<hr><b>Management GPIO_TRG</b> (mark "reset"):';
-	} else
+	else
 		is += '<hr><b>Management GPIO_TRG:</b>';
 	is += '&nbsp;<button type="button" title="Get/read current setings" onclick="sendCustomSetting(&quot;44&quot;);">Get TRG</button><br>';
 	if(cfg.ver >= 0x26) {
@@ -3914,6 +3926,8 @@ function CustomConfig() {
 	is += '<br> <button type="button" title="Set/save current setings" onclick="sendTrg();">Set TRG</button>';
 	is += ' <button type="button" title="GPIO_TRG PullUp 10 kOm. Work only TRG off!" onclick="sendCustomSetting(&quot;4501&quot;);">Set pin to "1"</button>';
 	is += ' <button type="button" title="GPIO_TRG PullDown 100 kOm. Work only TRG off!" onclick="sendCustomSetting(&quot;4500&quot;);">Set pin to "0"</button><br><hr>';
+	} else
+		is += '<hr>';
 	if(cfg.ver >= 0x13 && hwver_id != 31 && hwver_id != 38 && hwver_id != 62) {
 		is += '<b>Comfort parameters:</b>&nbsp;';
 		is += '<button type="button" title="Get current comfort parameters. The parameters are processed if the configuration is set to &quot;Comfort: On&quot;." onclick="sendCustomSetting(&quot;20&quot;);">Get current comfort parameters</button><br>';
@@ -3924,12 +3938,14 @@ function CustomConfig() {
 		is += '<button type="button" title="Set comfort parameters" onclick="SendCmf();">Set comfort parameters</button><br><hr>';
 		cmf.enable = true;
 	}
-	trg.enable = true;
+	trg.enable = srvOk(0x4100);
 	if(hwver_id < 30 || hwver_id == 49 || hwver_id == 62)
 		is += '<b>Keys and Codes:</b>&nbsp;<button type="button" onclick="sendCustomSetting(&quot;15&quot;);">Show all mi keys</button><br>';
 	if(cfg.ver >= 0x11) {
-		is += '<input size="6" maxlength="6" type="text" title="000000..999999, 6 decimal digits, 000000 - PinCode Disable. Warning: If the PinCode is forgotten - only a hardware flasher!" id="pincode" value="000000"> <button title="Warning: If the PinCode is forgotten - only a hardware flasher!" type="button" onclick="sendPinCode();">!Set PinCode!</button><br>';
-		pincode.enable = true;
+		if(srvOk(0x04)) { // SERVICE_PINCODE
+			is += '<input size="6" maxlength="6" type="text" title="000000..999999, 6 decimal digits, 000000 - PinCode Disable. Warning: If the PinCode is forgotten - only a hardware flasher!" id="pincode" value="000000"> <button title="Warning: If the PinCode is forgotten - only a hardware flasher!" type="button" onclick="sendPinCode();">!Set PinCode!</button><br>';
+			pincode.enable = true;
+		}
 		if(cfg.ver >= 0x14) {
 			is += '<br><button type="button" onclick="sendCustomSetting(&quot;01&quot;);">Get device Name</button> <input size="10" maxlength="18" type="text" title="Device Name: 1..18 chars" id="dev_name" value=""> <button type="button" title="Set New Name" onclick="sendDevName();">Set New Name</button> <button title="Clean Name: ATC_xxxx" type="button" onclick="CleanDevName();">Set default Name</button><br>';
 			dnm.enable = true;
@@ -3984,7 +4000,7 @@ function CustomConfig() {
 		}
 		$("adv_flags").checked = (cfg.flg2&0x10) != 0;
 		$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
-		$("longrange_flags").checked = (cfg.flg2&0x40) != 0;
+		setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	} else if(hwver_id == 49) {
 		$("cfg_flg_am_pm").checked = (cfg.flg&32) != 0;
 		$("cfg_flg_show_batt").checked = (cfg.flg&8) != 0;
@@ -3992,7 +4008,7 @@ function CustomConfig() {
     	$("cfg_flg3_weekday").checked = ((cfg.temp_offset&128) != 0);
 		$("adv_flags").checked = (cfg.flg2&0x10) != 0;
 		$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
-		$("longrange_flags").checked = (cfg.flg2&0x40) != 0;
+		setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	} else {
 		$("cfg_flg_blinking").checked = (cfg.flg&8) != 0;
 		$("cfg_flg_show_batt").checked = (cfg.flg&32) != 0;
@@ -4004,7 +4020,7 @@ function CustomConfig() {
 		if(cfg.ver >= 0x36) {
 			$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
 			if(cfg.ver >= 0x42)
-				$("longrange_flags").checked = (cfg.flg2&0x40) != 0;
+				setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 			else if(cfg.ver < 0x40)
 				$("csa2_flags").checked = (cfg.flg2&0x40) != 0;
 		}
@@ -4044,7 +4060,7 @@ function CustomConfig() {
 	is +=' <button type="button" title="The minimum period for calculation is 3 hours!" onclick="calkDeltaTime();">Calk delta time</button><br>';
 	if(cfg.ver >= 0x47)
 		is += '<hr><label id="lblSensor"><b>Sensor Settings:</b></label><br>Temperature Slope factor: <input size="8" type="text" id="inpTempK" maxlength="8" title="Tk: Slope factor (linear function) for temperature calculation (T=RegT*Tk/65536+Tz)"> , Zero offset: <input size="8" type="text" id="inpTempZ" maxlength="8" title="Tz: Zero offset with correction value for temperature calculation (T=RegT*Tk/65536+Tz)"><br>Humidity Slope factor: <input size="8" type="text" id="inpHumK" maxlength="8" title="Hk: Slope factor (linear function) for humidity calculation (H=RegH*Hk/65536+Hz)"> , Zero offset: <input size="8" type="text" id="inpHumZ" maxlength="8" title="Hz: Zero offset with correction value for humidity calculation (H=RegH*Hk/65536+Hz)"><br><button type="button"id="btnGetSens" onclick="getSensCfg()">Get Sensor Settings</button> <button type="button"id="btnSetSens" onclick="setSensCfg()">Send Sensor Settings</button> <button type="button"id="btnRstSens" onclick="resetSensCfg()" title="Restore default sensor settings">Set Default</button><br><div id="addSensors" disabled></div>';
-   	if(cfg.ver >= 0x48) {
+   	if(cfg.ver >= 0x48 && srvOk(0x4100)) { // SERVICE_TH_TRG | SERVICE_RDS
 		is += '<hr><b>Management GPIO_TRG:</b>';
 		is += '&nbsp;<button type="button" title="Get/read current setings" onclick="sendCustomSetting(&quot;44&quot;);">Get TRG</button><br>';
 		is += 'Temperature hysteresis: <input size="8" title="Step 0.01°, default -0.55°, =0 off, if less than zero - activation on decrease, if more than zero - activation on excess" id="trg_tmp_hst" maxlength="7" value="-0.55"> °';
@@ -4073,8 +4089,10 @@ function CustomConfig() {
 	is +='<hr><b>Keys and Codes:</b><br><br>EEP BindKey:<br><input size="40" maxlength="32" title="Bind Key must be 32 hex characters (16 bytes)" type="text" id="cbind_key" value="?">';
 	is +=' <button type="button" title="Get EEP BindKey" onclick="getBKey();">Get EEP BindKey</button>';
 	is +=' <button type="button" title="Set new EEP BindKey" onclick="setBKey();">Set EEP BindKey</button><br>';
-	is += '<input size="6" maxlength="6" type="text" title="000000..999999, 6 decimal digits, 000000 - PinCode Disable. Warning: If the PinCode is forgotten - only a hardware flasher!" id="pincode" value="000000"> <button title="Warning: If the PinCode is forgotten - only a hardware flasher!" type="button" onclick="sendPinCode();">!Set PinCode!</button><br>';
-	pincode.enable = true;
+	if(srvOk(0x04)) { // SERVICE_PINCODE
+		is += '<input size="6" maxlength="6" type="text" title="000000..999999, 6 decimal digits, 000000 - PinCode Disable. Warning: If the PinCode is forgotten - only a hardware flasher!" id="pincode" value="000000"> <button title="Warning: If the PinCode is forgotten - only a hardware flasher!" type="button" onclick="sendPinCode();">!Set PinCode!</button><br>';
+		pincode.enable = true;
+	}
 	is += '<br><button type="button" onclick="sendCustomSetting(&quot;01&quot;);">Get device Name</button> <input size="10" maxlength="10" type="text" title="Device Name: 1..10 chars" id="dev_name" value=""> <button type="button" title="Set New Name" onclick="sendDevName();">Set New Name</button> <button title="Clean Name: DEV_xxxx" type="button" onclick="CleanDevName();">Set default Name</button><br><br>';
 	dnm.enable = true;
 	is +='Device MAC [+ 2 Rand]:<br><button type="button" title="Get MAC" onclick="sendCustomSetting(&quot;10&quot;);">Get MAC</button> <input size="40" maxlength="16" type="text" id="mi_mac" title="Must be 6 hex MAC digits [+ 2 hex RandMAC digits]!" value="?">';
@@ -4083,7 +4101,7 @@ function CustomConfig() {
 	$("cfg_flg_adv_type").value = cfg.flg&3;
 	$("adv_flags").checked = (cfg.flg2&0x10) != 0;
 	$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
-	$("longrange_flags").checked = (cfg.flg2&0x40) != 0;
+	setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	$("cfg_flg_tx_meas").checked = (cfg.flg&64) != 0;
 	if(cfg.ver >= 0x48)
 		$("cfg_flg_lp_meas").checked = (cfg.flg&128) != 0;
@@ -4128,7 +4146,7 @@ function SendCustomConfig() {
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
 		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
-		cfg.flg2 += (($("longrange_flags").checked) ? 0x40 : 0);
+		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 		cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
 		cfg.temp_offset = ($("cfg_flg3_weekday").checked) ? 128 : 0;
 	} else if(hwver_id == 9 || hwver_id == 12 || hwver_id == 62) {
@@ -4141,7 +4159,7 @@ function SendCustomConfig() {
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
 		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
-		cfg.flg2 += (($("longrange_flags").checked) ? 0x40 : 0);
+		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 		if(cfg.ver >= 0x43)	cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
 		if(cfg.ver > 0x48) { 
 			cfg.temp_offset = ($("cfg_flg3_weekday").checked) ? 0 : 128;
@@ -4162,7 +4180,7 @@ function SendCustomConfig() {
 		if(cfg.ver >= 0x36) {
 			cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
 			if(cfg.ver >= 0x42) {
-				cfg.flg2 += (($("longrange_flags").checked) ? 0x40 : 0);
+				cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 				if(cfg.ver >= 0x43)	cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
 			} else if(cfg.ver < 0x40) cfg.flg2 += (($("csa2_flags").checked) ? 0x40 : 0);
 		}
@@ -4177,7 +4195,7 @@ function SendCustomConfig() {
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
 		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
-		cfg.flg2 += (($("longrange_flags").checked) ? 0x40 : 0);
+		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
  }
 	if(cfg.ver >= 0x20)	cfg.av_meas_mem = parseInt($("cfg_av_meas_mem").value);
 	if(cfg.ver < 0x47) {
