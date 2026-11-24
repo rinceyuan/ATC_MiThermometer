@@ -97,8 +97,8 @@ u16 get_adc_mv(u32 p_ain) { // ADC_InputPchTypeDef
 #if USE_MI_BATTERY_CURVE
 /* Above 2700 mV 100% as the original Xiaomi MJWSD06MMC firmware 2.1.1_0009 (FUN_00009a20: step table
  * 2700/2600/2500/2400/2300 mV -> 100/70/40/10/5%, CR2032 plateau); below, linear between its levels:
- * 2200 mV 0%, 2300 5%, 2400 10%, 2500 40%, 2600 70%, 2700 100% (rounded to nearest %). */
-_attribute_ram_code_
+ * 2200 mV 0%, 2300 5%, 2400 10%, 2500 40%, 2600 70%, 2700 100% (rounded to nearest %).
+ * Called once per measurement: kept in flash (not in retention RAM). */
 u8 get_battery_level(u16 battery_mv) {
 	u32 mv = battery_mv;
 	if (mv >= 2700) return 100;

@@ -43,8 +43,7 @@ extern u32 utc_set_time_sec; // cmd_parser.c
 
 /* --- GATT values --- */
 const u8 mi_version_str[10] = {'2','.','1','.','1','_','0','0','0','9'};
-RAM u8 mi_auth_val[4];
-RAM u8 mi_std_val[20];
+const u8 mi_wo_val[20] = {0};
 RAM u16 mi_auth_ccc;
 RAM u16 mi_std_ccc;
 RAM u8 mi_th_val[5];
@@ -188,11 +187,8 @@ static void hmac_sha256(const u8 *key, u32 klen, const u8 *m1, u32 l1, const u8 
  *  Notify helpers
  * -------------------------------------------------------------------------------------------*/
 static void mi_auth_status(u8 code) {
-	mi_auth_val[0] = code;
-	mi_auth_val[1] = 0;
-	mi_auth_val[2] = 0;
-	mi_auth_val[3] = 0;
-	bls_att_pushNotifyData(Mi_AUTH_DP_H, mi_auth_val, sizeof(mi_auth_val));
+	u8 v[MI_AUTH_VAL_LEN] = {code, 0, 0, 0};
+	bls_att_pushNotifyData(Mi_AUTH_DP_H, v, sizeof(v));
 }
 
 static void mi_std_notify(const u8 *p, int len) {
@@ -438,7 +434,6 @@ u8 mi_auth_logged(void) {
 RAM u8 mi_hist_count_val[8];	// ebe0ccb9: u32 last index, u32 count
 RAM u8 mi_hist_index_val[4];	// ebe0ccba: u32 index
 RAM u8 mi_hist_read_val[14];	// ebe0ccbb: newest record
-RAM u8 mi_hist_notify_val[14];	// ebe0ccbc: notify record
 RAM u16 mi_hist_ccc;
 
 typedef struct {
@@ -667,13 +662,14 @@ u8 mi_hist_busy(void) {
 /* main loop, connected and TX FIFO ready: send one hourly record */
 void mi_hist_task(void) {
 	memo_blk_t r;
+	u8 rec[sizeof(mi_hist_read_val)]; // the stack copies notification data
 	while (mi_hist.active) {
 		if (mi_hist.cur > mi_hist.last || !mi_hist.bnum) {
 			hist_stop();
 			return;
 		}
-		if (hist_make(&mi_hist.bnum, mi_hist.cur, mi_hist_notify_val)) {
-			bls_att_pushNotifyData(MiTH_HNTF_DP_H, mi_hist_notify_val, sizeof(mi_hist_notify_val));
+		if (hist_make(&mi_hist.bnum, mi_hist.cur, rec)) {
+			bls_att_pushNotifyData(MiTH_HNTF_DP_H, rec, sizeof(rec));
 			mi_hist.cur++;
 			return;
 		}

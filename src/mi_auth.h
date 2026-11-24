@@ -19,8 +19,10 @@
 #define MI_AUTH_NOT_REG		0xE0
 
 extern const u8 mi_version_str[10];
-extern u8 mi_auth_val[4];
-extern u8 mi_std_val[20];
+#define MI_AUTH_VAL_LEN	4
+// value of the write-only 0x0010 / 0x0019 attributes: the stack does not store values of
+// attributes with a write callback, so they share one constant (notifications use locals)
+extern const u8 mi_wo_val[20];
 extern u16 mi_auth_ccc;
 extern u16 mi_std_ccc;
 
@@ -43,7 +45,6 @@ void mi_time_task(void);		// main loop: save the clock every 5 minutes
 extern u8 mi_hist_count_val[8];		// ebe0ccb9
 extern u8 mi_hist_index_val[4];		// ebe0ccba
 extern u8 mi_hist_read_val[14];		// ebe0ccbb
-extern u8 mi_hist_notify_val[14];	// ebe0ccbc
 extern u16 mi_hist_ccc;
 int mi_hist_count_read(void * p);
 int mi_hist_index_write(void * p);
