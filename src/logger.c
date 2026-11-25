@@ -220,7 +220,7 @@ unsigned get_memo(u32 bnum, pmemo_blk_t p) {
 	return 1;
 }
 
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 __attribute__((optimize("-Os")))
 void write_memo(void) {
 	memo_blk_t mblk;

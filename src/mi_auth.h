@@ -39,6 +39,8 @@ void mi_time_set(u32 t);		// set clock (UTC); clears the logger on a step back >
 #if USE_MI_TIME_SAVE
 void mi_time_load(void);		// power-on: restore the clock saved in flash (0x7A000)
 void mi_time_task(void);		// main loop: save the clock every 5 minutes
+extern u32 mi_tlog_next;
+#define MI_TIME_TASK_DUE()	(wrk.utc_time_sec >= mi_tlog_next)
 #endif
 
 #if (DEV_SERVICES & SERVICE_HISTORY)

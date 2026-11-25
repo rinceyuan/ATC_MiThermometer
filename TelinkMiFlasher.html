@@ -3815,7 +3815,7 @@ function CustomConfig() {
 	}
 	if(cfg.ver >= 0x36) {
 		if(cfg.ver >= 0x42)
-			is += 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags">' + (srvOk(0x40) ? ', LE Long Range (only for BT5.0+ adapters!): <input title="Enable Extended Advertising Long Range (Coded PHY S8)" type="checkbox" id="longrange_flags">' : '') + '<br><br>';
+			is += (miEnabled ? '' : 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags">') + (srvOk(0x40) ? ', LE Long Range (only for BT5.0+ adapters!): <input title="Enable Extended Advertising Long Range (Coded PHY S8)" type="checkbox" id="longrange_flags">' : '') + '<br><br>';
 		else if(cfg.ver >= 0x40)
 			is += 'BT5+ PHY: <input title="Support BT5.0+ PHY (LE 2M/1M/500K/125K, CSA2)" type="checkbox" id="bt5_flags"><br><br>';
 		else
@@ -3999,7 +3999,7 @@ function CustomConfig() {
 		    	$("cfg_flg3_ddmm").checked = ((cfg.temp_offset&64) != 0);
 		}
 		$("adv_flags").checked = (cfg.flg2&0x10) != 0;
-		$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
+		setChk("bt5_flags", (cfg.flg2&0x20) != 0);
 		setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	} else if(hwver_id == 49) {
 		$("cfg_flg_am_pm").checked = (cfg.flg&32) != 0;
@@ -4007,7 +4007,7 @@ function CustomConfig() {
 		$("cfg_smiley").value = cfg.flg2&7;
     	$("cfg_flg3_weekday").checked = ((cfg.temp_offset&128) != 0);
 		$("adv_flags").checked = (cfg.flg2&0x10) != 0;
-		$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
+		setChk("bt5_flags", (cfg.flg2&0x20) != 0);
 		setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	} else {
 		$("cfg_flg_blinking").checked = (cfg.flg&8) != 0;
@@ -4018,7 +4018,7 @@ function CustomConfig() {
 		if(cfg.ver >= 0x30)
 			$("adv_flags").checked = (cfg.flg2&0x10) != 0;
 		if(cfg.ver >= 0x36) {
-			$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
+			setChk("bt5_flags", (cfg.flg2&0x20) != 0);
 			if(cfg.ver >= 0x42)
 				setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 			else if(cfg.ver < 0x40)
@@ -4100,7 +4100,7 @@ function CustomConfig() {
 	$("custcfg").innerHTML = is;
 	$("cfg_flg_adv_type").value = cfg.flg&3;
 	$("adv_flags").checked = (cfg.flg2&0x10) != 0;
-	$("bt5_flags").checked = (cfg.flg2&0x20) != 0;
+	setChk("bt5_flags", (cfg.flg2&0x20) != 0);
 	setChk("longrange_flags", (cfg.flg2&0x40) != 0);
 	$("cfg_flg_tx_meas").checked = (cfg.flg&64) != 0;
 	if(cfg.ver >= 0x48)
@@ -4145,7 +4145,7 @@ function SendCustomConfig() {
 		cfg.flg2 = (parseInt($("cfg_smiley").value) & 7);
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
-		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
+		cfg.flg2 += ((getChk("bt5_flags")) ? 0x20 : 0);
 		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 		cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
 		cfg.temp_offset = ($("cfg_flg3_weekday").checked) ? 128 : 0;
@@ -4158,7 +4158,7 @@ function SendCustomConfig() {
 		cfg.flg2 = (parseInt($("cfg_scr_type").value) & 7);
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
-		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
+		cfg.flg2 += ((getChk("bt5_flags")) ? 0x20 : 0);
 		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 		if(cfg.ver >= 0x43)	cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
 		if(cfg.ver > 0x48) { 
@@ -4178,7 +4178,7 @@ function SendCustomConfig() {
 		if(cfg.ver >= 0x22)	cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		if(cfg.ver >= 0x30)	cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
 		if(cfg.ver >= 0x36) {
-			cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
+			cfg.flg2 += ((getChk("bt5_flags")) ? 0x20 : 0);
 			if(cfg.ver >= 0x42) {
 				cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
 				if(cfg.ver >= 0x43)	cfg.flg2 += (($("cfg_scr_off").checked) ? 0x80 : 0);
@@ -4194,7 +4194,7 @@ function SendCustomConfig() {
 		cfg.flg2 = cfg.flg2 & 0x87;
 		cfg.flg2 += (($("cfg_adv_crypto").checked) ? 0x08 : 0);
 		cfg.flg2 += (($("adv_flags").checked )? 0x10 : 0);
-		cfg.flg2 += (($("bt5_flags").checked) ? 0x20 : 0);
+		cfg.flg2 += ((getChk("bt5_flags")) ? 0x20 : 0);
 		cfg.flg2 += ((getChk("longrange_flags")) ? 0x40 : 0);
  }
 	if(cfg.ver >= 0x20)	cfg.av_meas_mem = parseInt($("cfg_av_meas_mem").value);

@@ -1087,11 +1087,14 @@ void main_loop(void) {
 		}
 #endif
 	}
+	// checked here (RAM code), the flash code of the tasks runs only when due
 #if USE_MIHOME_SPEC_BEACON
-	mi_beacon_cnt_task();
+	if (MI_BCNT_TASK_DUE())
+		mi_beacon_cnt_task();
 #endif
 #if USE_MI_TIME_SAVE
-	mi_time_task();
+	if (MI_TIME_TASK_DUE())
+		mi_time_task();
 #endif
 #if SENSOR_SLEEP_MEASURE
 	if(sensor_cfg.time_measure && (clock_time() - sensor_cfg.time_measure > sensor_cfg.measure_timeout))

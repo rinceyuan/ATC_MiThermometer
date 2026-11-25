@@ -38,7 +38,7 @@ RAM mi_beacon_nonce_t beacon_nonce;
 /// Vars
 typedef struct _mi_beacon_data_t { // out data
 	s16 temp;	// x0.1 C
-	u16 humi;	// x0.1 %
+	u16 humi;	// x0.1 % (MIoT spec beacon: 1 %)
 	u8 batt;	// 0..100 %
 	u8 stage;
 } mi_beacon_data_t;
@@ -61,8 +61,8 @@ void mi_beacon_init(void) {
 #endif
 }
 
-/* Averaging measurements */
-_attribute_ram_code_
+/* Averaging measurements (once per measurement) */
+_attribute_ram_code_not_mi_
 void mi_beacon_summ(void) {
 	if(mib_summ_data.count > 0x7fff) {
 		memset(&mib_summ_data, 0, sizeof(mib_summ_data));
@@ -85,7 +85,6 @@ void mi_beacon_summ(void) {
  * so it must keep increasing across reboots (as the original firmware: saved every 512 frames,
  * + 512 at power-on). The first start continues after the original firmware's counter
  * (Mi key record SEQNUM) or at least MI_BCNT_FIRST (above the counters of earlier custom builds). */
-#define MI_BCNT_SAVE_STEP	0x200
 #define MI_BCNT_FIRST		0x10000
 RAM u32 mi_bcnt_saved;
 
@@ -158,12 +157,13 @@ void mi_encrypt_data_beacon(void) {
 		if(mib_summ_data.count) {
 			s16 t = (s16)(mib_summ_data.temp/(s32)mib_summ_data.count); // x0.01 C
 			mi_beacon_data.temp = (t + ((t < 0) ? -5 : 5))/10; // x0.1 C, rounded half away from zero
-			mi_beacon_data.humi = ((u16)(mib_summ_data.humi/mib_summ_data.count)  + 5)/10;
+			// 1 %, rounded once as the LCD / ebe0ccc1 (x0.01 % -> x0.1 % -> 1 % rounded 46.45 % up to 47 %)
+			mi_beacon_data.humi = ((u16)(mib_summ_data.humi/mib_summ_data.count) + 50)/100;
 			mi_beacon_data.batt = get_battery_level((u16)(mib_summ_data.batt/mib_summ_data.count));
 			memset(&mib_summ_data, 0, sizeof(mib_summ_data));
 		} else {
 			mi_beacon_data.temp = measured_data.temp_x01;
-			mi_beacon_data.humi = measured_data.humi_x01;
+			mi_beacon_data.humi = measured_data.humi_x1;
 			mi_beacon_data.batt = measured_data.battery_level;
 		}
 	}
@@ -178,7 +178,7 @@ void mi_encrypt_data_beacon(void) {
 		case 1:
 			obj[0] = 0x02; obj[1] = 0x48; // siid 2, piid 1002
 			olen = 1;
-			obj[3] = (u8)((mi_beacon_data.humi + 5) / 10);
+			obj[3] = (u8)mi_beacon_data.humi;
 			break;
 		default:
 			obj[0] = 0x03; obj[1] = 0x4c; // siid 3, piid 1003
@@ -354,7 +354,7 @@ void mi_encrypt_event_beacon(u8 n) {
 #endif // #if (DEV_SERVICES & SERVICE_BINDKEY)
 
 /* Create mi beacon packet */
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 void mi_data_beacon(void) {
 	padv_mi_mac_beacon_t p = (padv_mi_mac_beacon_t)&adv_buf.data;
 	memcpy(p->MAC, mac_public, 6);

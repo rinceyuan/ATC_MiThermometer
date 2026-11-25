@@ -698,15 +698,22 @@ RAM u32 mi_tlog_next;	// next periodic save time
 
 #define MI_TLOG_VALID(v)	((v) >= MI_TIME_MIN && (v) < 0x80000000u) // not erased / not a partially written word
 
-/* append t; returns 0 if postponed (area full while connected: no sector erase during a connection) */
+#define MI_TLOG_EARLY	(12 * 4)	// last 12 entries (1 hour of saves): erased early when not connected
+#define MI_TLOG_RETRY	10			// seconds: retry of a postponed save while connected
+
+/* append t; returns 0 if postponed (area full while connected: no sector erase during a connection,
+ * retried every MI_TLOG_RETRY seconds) */
 static int mi_tlog_write(u32 t) {
 	u32 v = 0;
 	if (mi_tlog_addr >= MI_TLOG_START && mi_tlog_addr + 4 <= MI_TLOG_END)
 		flash_read_page(FLASH_BASE_ADDR + mi_tlog_addr, 4, (u8 *)&v);
-	// full, or not erased (power lost during the erase of the two sectors): erase and restart
-	if (v != 0xffffffff) {
-		if (wrk.ble_connected)
+	// full, or not erased (power lost during the erase of the two sectors): erase and restart;
+	// nearly full and not connected: erase now, so that the area hardly ever gets full during a connection
+	if (v != 0xffffffff || (!wrk.ble_connected && mi_tlog_addr >= MI_TLOG_END - MI_TLOG_EARLY)) {
+		if (wrk.ble_connected) {
+			mi_tlog_next = t + MI_TLOG_RETRY;
 			return 0;
+		}
 		flash_erase_sector(FLASH_BASE_ADDR + MI_TLOG_START);
 		flash_erase_sector(FLASH_BASE_ADDR + MI_TLOG_START + FLASH_SECTOR_SIZE);
 		mi_tlog_addr = MI_TLOG_START;
@@ -738,11 +745,15 @@ void mi_time_load(void) {
 	mi_tlog_next = t - (t % MI_TLOG_STEP) + MI_TLOG_STEP;
 }
 
-/* main loop: save the clock every 5 minutes */
+/* main loop (called when MI_TIME_TASK_DUE()): save the clock every 5 minutes */
 void mi_time_task(void) {
 	u32 t = wrk.utc_time_sec;
-	if (t >= mi_tlog_next && t >= MI_TIME_MIN)
-		mi_tlog_write(t);
+	if (t >= mi_tlog_next) {
+		if (t >= MI_TIME_MIN)
+			mi_tlog_write(t);
+		else // clock not set: nothing to save, check again in 5 minutes
+			mi_tlog_next = t - (t % MI_TLOG_STEP) + MI_TLOG_STEP;
+	}
 }
 #endif // USE_MI_TIME_SAVE
 
@@ -761,8 +772,7 @@ void mi_time_set(u32 t) {
 #endif
 #if USE_MI_TIME_SAVE
 	if (t >= MI_TIME_MIN) {
-		if (!mi_tlog_write(t))
-			mi_tlog_next = t; // area full while connected: save after disconnect
+		mi_tlog_write(t); // area full while connected: saved after the disconnect (retry every MI_TLOG_RETRY s)
 	}
 #endif
 	SET_LCD_UPDATE();

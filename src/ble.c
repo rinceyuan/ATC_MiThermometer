@@ -671,6 +671,7 @@ __attribute__((optimize("-Os"))) void init_ble(void) {
 #if (DEV_SERVICES & SERVICE_LE_LR)
 	adv_buf.ext_adv_init = EXT_ADV_Off;
 #endif
+#if !USE_MI_AUTH // MiHome build: 1M PHY only (MiHome / Mi gateways), the 2M/Coded PHY + CSA2 code is not linked
 	if (cfg.flg2.bt5phy) { // 1M, 2M, Coded PHY
 		blc_ll_init2MPhyCodedPhy_feature();	//if use 2M or Coded PHY
 		// set Default Connection Coding
@@ -697,6 +698,7 @@ __attribute__((optimize("-Os"))) void init_ble(void) {
 #endif
 			blc_ll_setDefaultPhy(PHY_TRX_PREFER, PHY_PREFER_1M, PHY_PREFER_1M);
 	}
+#endif // !USE_MI_AUTH
 	////// Host Initialization  //////////
 	blc_gap_peripheral_init();
 	my_att_init(); //gatt initialization

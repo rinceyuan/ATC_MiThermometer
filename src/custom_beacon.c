@@ -91,7 +91,7 @@ void pvvx_encrypt_data_beacon(void) {
 #endif // #if (DEV_SERVICES & SERVICE_BINDKEY)
 
 #if USE_CUSTOM_BEACON
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 __attribute__((optimize("-Os")))
 void pvvx_data_beacon(void) {
 	padv_custom_t p = (padv_custom_t)&adv_buf.data;
@@ -119,7 +119,7 @@ void pvvx_data_beacon(void) {
 #endif
 
 #if USE_ATC_BEACON
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 __attribute__((optimize("-Os")))
 void atc_data_beacon(void) {
 	padv_atc1441_t p = (padv_atc1441_t)&adv_buf.data;

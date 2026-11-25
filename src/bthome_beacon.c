@@ -27,7 +27,7 @@
 #include "sensor.h"
 #endif
 
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 static u32 set_bthome_data1(padv_bthome_data1_t p) {
 		p->b_id = BtHomeID_battery;
 		p->battery_level = measured_data.battery_level;
@@ -98,7 +98,7 @@ static u32 set_bthome_data1(padv_bthome_data1_t p) {
 		return sizeof(adv_bthome_data1_t);
 }
 
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 static u32 set_bthome_data2(padv_bthome_data2_t p) {
 #if (DEV_SERVICES & SERVICE_IUS)
 #if USE_SENSOR_INA3221
@@ -167,7 +167,7 @@ typedef struct __attribute__((packed)) _adv_bthome_encrypt_t {
 } adv_bthome_encrypt_t, * padv_bthome_encrypt_t;
 
 /* Encrypt bthome data beacon packet */
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 static void bthome_encrypt(u8 *pdata, u32 data_size) {
 	padv_bthome_encrypt_t p = (padv_bthome_encrypt_t)&adv_buf.data;
 	p->head.size = data_size + sizeof(p->head) - sizeof(p->head.size) + sizeof(p->info) + 4 + 4; // + mic + count
@@ -190,7 +190,7 @@ static void bthome_encrypt(u8 *pdata, u32 data_size) {
 }
 
 /* Create encrypted bthome data beacon packet */
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 void bthome_encrypt_data_beacon(void) {
 	u8 buf[16];
 #if USE_SENSOR_ENS160
@@ -218,7 +218,7 @@ void bthome_encrypt_data_beacon(void) {
 
 #endif // #if (DEV_SERVICES & SERVICE_BINDKEY)
 
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 void bthome_data_beacon(void) {
 	padv_bthome_ns1_t p = (padv_bthome_ns1_t)&adv_buf.data;
 	p->head.type = GAP_ADTYPE_SERVICE_DATA_UUID_16BIT; // 16-bit UUID
@@ -257,7 +257,7 @@ void bthome_data_beacon(void) {
 
 #if (DEV_SERVICES & SERVICE_RDS)
 // n = RDS_TYPES
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 void bthome_event_beacon(u8 n) {
 	padv_bthome_ns_ev1_t p = (padv_bthome_ns_ev1_t)&adv_buf.data;
 	p->head.type = GAP_ADTYPE_SERVICE_DATA_UUID_16BIT; // 16-bit UUID
@@ -280,7 +280,7 @@ void bthome_event_beacon(u8 n) {
 }
 #if (DEV_SERVICES & SERVICE_BINDKEY)
 // n = RDS_TYPES
-_attribute_ram_code_ __attribute__((optimize("-Os")))
+_attribute_ram_code_not_mi_ __attribute__((optimize("-Os")))
 void bthome_encrypt_event_beacon(u8 n) {
 	u8 buf[16];
 	padv_bthome_event1_t p = (padv_bthome_event1_t)&buf;

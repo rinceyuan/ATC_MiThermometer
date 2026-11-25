@@ -3768,6 +3768,13 @@ GPIO_PD7 - LED to +Vbat
 #if USE_MI_TIME_SAVE && !USE_MI_AUTH
 #error "USE_MI_TIME_SAVE requires USE_MI_AUTH"
 #endif
+/* Code that the MiHome build (USE_MI_AUTH) never runs in its configuration (other advertising types) or runs
+ * only every few minutes (logger write) stays in flash there: retention RAM. Other builds: RAM code as before. */
+#if USE_MI_AUTH
+#define _attribute_ram_code_not_mi_
+#else
+#define _attribute_ram_code_not_mi_	_attribute_ram_code_
+#endif
 #ifndef USE_BTHOME_BEACON
 #define USE_BTHOME_BEACON	1 // = 1 BTHome v2 https://bthome.io/
 #endif
