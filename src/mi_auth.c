@@ -388,24 +388,39 @@ int mi_time_write(void * p) {
 	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
 	u32 len = req->l2cap - 3;
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	/* As the original LYWSD02MMC 2.0.1_0021 firmware:
+	 * 5: utc + tz hour; 6: utc + tz hour + tz quarter (15 min); 7: only the 12/24h mode (0xAA = 12h).
+	 * An invalid timezone (hour -24..24, quarter -4..4) discards the whole write.
+	 * 4: utc only (extension, the timezone is kept). */
 	if (len == 7) {
 		u8 am_pm = (req->dat[6] == 0xAA) ? 1 : 0;
 		if (cfg.flg.time_am_pm != am_pm) {
 			cfg.flg.time_am_pm = am_pm;
 			flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
-			SET_LCD_UPDATE();
 		}
+		SET_LCD_UPDATE();
 		return 0;
 	}
+	if (len > 7)
+		return 0;
 	if (len >= 5) {
 		s8 tz_h = (s8)req->dat[4];
-		s8 tz_q = (len >= 6) ? (s8)req->dat[5] : 0;
-		if (tz_h >= -24 && tz_h <= 24 && tz_q >= -4 && tz_q <= 4) {
-			if (mi_tz[0] != tz_h || mi_tz[1] != tz_q) {
-				mi_tz[0] = tz_h;
-				mi_tz[1] = tz_q;
-				flash_write_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz));
-			}
+		s8 tz_q = (len == 6) ? (s8)req->dat[5] : 0;
+		if (tz_h < -24 || tz_h > 24 || tz_q < -4 || tz_q > 4)
+			return 0;
+		// stored as the original firmware: sign, hours (mod 24) and quarters of the absolute offset
+		s32 m = (s32)tz_h * 60 + (s32)tz_q * 15;
+		u32 a = (m < 0) ? -m : m;
+		tz_h = (s8)((a / 60) % 24);
+		tz_q = (s8)((a % 60) / 15);
+		if (m < 0) {
+			tz_h = -tz_h;
+			tz_q = -tz_q;
+		}
+		if (mi_tz[0] != tz_h || mi_tz[1] != tz_q) {
+			mi_tz[0] = tz_h;
+			mi_tz[1] = tz_q;
+			flash_write_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz));
 		}
 	}
 #endif

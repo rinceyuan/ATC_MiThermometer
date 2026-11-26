@@ -203,6 +203,17 @@ RAM u8 epd_updated;
 RAM u16 lcd_refresh_cnt;
 #endif
 
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+#ifndef EPD_TEMP_STEP_X01
+#define EPD_TEMP_STEP_X01	5	// 0.5 C: shown at once after a measurement, smaller changes with the next minute
+#endif
+#ifndef EPD_HUMI_STEP_X1
+#define EPD_HUMI_STEP_X1	3	// 3 %
+#endif
+RAM s16 epd_temp_x01; // values on the EPD
+RAM u8 epd_humi_x1;
+#endif
+
 //----------------------------------
 // T_LUT_init, T_LUT_work values taken from the actual device with a
 // logic analyzer
@@ -226,7 +237,7 @@ extern void sleep_us16(unsigned int us16);
 
 //----------------------------------
 
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 __attribute__((optimize("-Os")))
 static void lcd_set_digit(u8 *buf, u8 digit, const u8 *segments) {
     // set the segments, there are up to 11 segments in a digit
@@ -275,7 +286,7 @@ static void clear_s4(void) {
 	display_buff[4] = 0; // "F/C"
 }
 
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 void show_ble_symbol(bool state){
 	if (state)
 		display_buff[11] |= BIT(0); // "connect"
@@ -314,7 +325,7 @@ void show_smiley(u8 state){
 		display_buff[5] &= ~(BIT(0));
 }
 
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 u8 is_comfort(s16 t, u16 h) {
 	u8 ret = LCD_SYM_SMILEY_SAD;
 	if (t >= cmf.t[0] && t <= cmf.t[1] && h >= cmf.h[0] && h <= cmf.h[1])
@@ -322,7 +333,7 @@ u8 is_comfort(s16 t, u16 h) {
 	return ret;
 }
 
-_attribute_ram_code_
+_attribute_ram_code_not_mi_
 void show_battery_symbol(bool state) {
 	display_buff[10] &= ~(BIT(6) | BIT(7));
 	if (state) {
@@ -481,12 +492,9 @@ static void show_clock_s1(void) {
 			hrs -= 12;
 		else if(!hrs)
 			hrs = 12;
-		if(cfg.flg3.show_day_of_week) // 0 = Sunday
-			lcd_set_digit(display_buff, rtc.weekday + 1, sb_s1[4]);
-	} else {
-		if(cfg.flg3.show_day_of_week) // 0 = Monday
-			lcd_set_digit(display_buff, (rtc.weekday) ? rtc.weekday : 7, sb_s1[4]);
 	}
+	if(cfg.flg3.show_day_of_week) // rtc.weekday: 0 = Sunday; shown 1 = Monday .. 7 = Sunday
+		lcd_set_digit(display_buff, (rtc.weekday) ? rtc.weekday : 7, sb_s1[4]);
 	display_buff[7] = BIT(4) | BIT(5); // ":"
 	lcd_set_digit(display_buff, hrs / 10 % 10, sb_s1[0]);
 	lcd_set_digit(display_buff, hrs % 10, sb_s1[1]);
@@ -728,14 +736,31 @@ void show_battery(void) {
 	show_battery_symbol(1);
 }
 
-_attribute_ram_code_
-__attribute__((optimize("-O2")))
+/* Called once a minute (clock) and after new measurements: in flash for the MiHome build (retention RAM) */
+_attribute_ram_code_not_mi_
+__attribute__((optimize("-Os")))
 void lcd(void) {
 	if(cfg.flg2.screen_off) {
 		return;
 	}
+	bool show_ext = lcd_flg.chow_ext_ut >= wrk.utc_time_sec;
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	if (lcd_flg.update_next_measure && !show_ext) {
+		// update after a new measurement: small changes wait for the next minute of the clock (one EPD refresh)
+		s16 dt = measured_data.temp_x01 - epd_temp_x01;
+		s16 dh = (s16)measured_data.humi_x1 - (s16)epd_humi_x1;
+		if (dt < EPD_TEMP_STEP_X01 && dt > -EPD_TEMP_STEP_X01
+			&& dh < EPD_HUMI_STEP_X1 && dh > -EPD_HUMI_STEP_X1)
+			return;
+	}
+	/* The clock forces an update every minute (SET_LCD_UPDATE), in between only after new measurements.
+	 * EPD busy (update_lcd() cannot send now) or external data shown: periodic update as before. */
+	lcd_flg.update_next_measure = !show_ext && !stage_lcd;
+	epd_temp_x01 = measured_data.temp_x01;
+	epd_humi_x1 = measured_data.humi_x1;
+#endif
 	show_ble_symbol(wrk.ble_connected);
-	if(lcd_flg.chow_ext_ut >= wrk.utc_time_sec) {
+	if(show_ext) {
 		show_s1_number_x100(ext.number, ext.flg.temp_symbol);
 		show_battery_symbol(ext.flg.battery);
 		show_smiley(ext.flg.smiley);

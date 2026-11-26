@@ -105,9 +105,11 @@ u32 find_mi_keys(u16 chk_id, u8 cnt) {
 u32 find_mi_keys(u16 chk_id, u8 cnt) {
 	u32 faddr = FLASH_MIKEYS_ADDR;
 	u8 fbuf[3];
+	/* The Mi SDK of the original firmware writes the key records alternately to the sectors
+	 * 0x78000 and 0x79000 (all devices using this function): 0x78000 erased -> records in 0x79000 */
 	_flash_read(faddr, sizeof(fbuf), &fbuf);
 	if (fbuf[0] == 0xff && fbuf[1] == 0xff && fbuf[2] == 0xff)
-		faddr += FLASH_SECTOR_SIZE; // active ping-pong sector is 0x79000
+		faddr += FLASH_SECTOR_SIZE;
 	u32 faend = faddr + FLASH_SECTOR_SIZE;
 	pblk_mi_keys_t pk = &keybuf;
 	u16 id;

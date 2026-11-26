@@ -392,8 +392,8 @@ extern "C" {
 #define PB0_FUNC			AS_GPIO
 
 #define I2C_MAX_SPEED 		700000 // 700 kHz
-#define I2C_SCL 			GPIO_PC0
-#define I2C_SDA 			GPIO_PC1
+#define I2C_SDA 			GPIO_PC0
+#define I2C_SCL 			GPIO_PC1
 #define I2C_GROUP 			I2C_GPIO_GROUP_C0C1
 #define PULL_WAKEUP_SRC_PC0	PM_PIN_PULLUP_10K
 #define PULL_WAKEUP_SRC_PC1	PM_PIN_PULLUP_10K
@@ -3010,7 +3010,11 @@ GPIO_D7 - SDA
 #define PULL_WAKEUP_SRC_PC0     RDS1_PULLUP
 
 #elif DEVICE_TYPE == DEVICE_LYWSD02MMC
-
+/* Flash areas used besides the firmware (original firmware 2.0.1_0021):
+  0x78000, 0x79000 Mijia key records (ping-pong sectors: token, bindkey, ...), read by find_mi_keys()
+  0x7A000..0x7BFFF clock log (USE_MI_TIME_SAVE)
+  0x80000 End Flash (FLASH_SIZE)
+ */
 // TLSR8250F512ET32
 // GPIO_PA0 - used EPD_BUSY
 // GPIO_PA1 - used EPD_RST
@@ -3132,41 +3136,43 @@ GPIO_D7 - SDA
 #define PD7_FUNC			AS_GPIO
 
 #if (DEV_SERVICES & SERVICE_KEY)
-
-// PC4 - key
+// PB5 - key
 #define GPIO_KEY2			GPIO_PB5
 #define PB5_INPUT_ENABLE	1
 #define PB5_DATA_OUT		0
 #define PB5_OUTPUT_ENABLE	0
 #define PB5_FUNC			AS_GPIO
 #define PULL_WAKEUP_SRC_PB5 PM_PIN_PULLUP_1M
+#endif
 
+// reed switch and trigger pins only with their services (MiHome build: SDK default, input off)
+#if (DEV_SERVICES & SERVICE_RDS)
 #define RDS1_PULLUP			PM_PIN_PULLUP_1M
+#if (DEV_SERVICES & SERVICE_KEY)
 #define GPIO_RDS1 			GPIO_PB4	// Reed Switch, Input
 #define PB4_INPUT_ENABLE	1
 #define PB4_DATA_OUT		0
 #define PB4_OUTPUT_ENABLE	0
 #define PB4_FUNC			AS_GPIO
 #define PULL_WAKEUP_SRC_PB4 RDS1_PULLUP
-
 #else
-
-#define RDS1_PULLUP			PM_PIN_PULLUP_1M
 #define GPIO_RDS1 			GPIO_PC4	// Reed Switch, Input
 #define PC4_INPUT_ENABLE	1
 #define PC4_DATA_OUT		0
 #define PC4_OUTPUT_ENABLE	0
 #define PC4_FUNC			AS_GPIO
 #define PULL_WAKEUP_SRC_PC4 RDS1_PULLUP
-
 #endif
+#endif // (DEV_SERVICES & SERVICE_RDS)
 
+#if (DEV_SERVICES & SERVICE_TH_TRG)
 #define GPIO_TRG			GPIO_PA2 // none
 #define PA2_INPUT_ENABLE	1
 #define PA2_DATA_OUT		0
 #define PA2_OUTPUT_ENABLE	0
 #define PA2_FUNC			AS_GPIO
 #define PULL_WAKEUP_SRC_PA2	PM_PIN_PULLDOWN_100K
+#endif
 
 #elif DEVICE_TYPE == DEVICE_ZG204ZL
 

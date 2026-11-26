@@ -37,6 +37,7 @@ CFG_FLG, CFG_FLG2, CFG_FLG3, CFG_ADV_INT, CFG_MEAS_INT, CFG_LCD_STEP = 0, 1, 2, 
 MD_TEMP = 2
 WRK_UTC, WRK_CONN = 0, 28
 SENS_TIME_MEASURE = 26
+LCDF_UPDATE_NEXT = 12  # lcd_flg.update_next_measure
 ADVB_COUNT = 0
 ADVB_DATA = {71: 12, 39: 11}
 
@@ -53,10 +54,12 @@ F2_SCREEN_OFF = 0x80
 F3_SHOW_DOW = 0x80
 
 ENTRIES = ['lcd', 'update_lcd', 'WakeupLowPowerCb', 'check_battery', 'get_battery_level',
-           'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon']
+           'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon',
+           'mi_time_write', 'mi_time_read']
 STUBS = ['init_lcd', 'send_i2c_byte', 'send_i2c_buf', 'read_sensor_cb', 'get_adc_mv',
          'low_vbat', 'go_sleep', 'write_memo', 'bls_pm_setAppWakeupLowPower',
-         '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt']
+         '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set']
+SCRATCH = 0x84e000  # SRAM buffer for ATT write packets
 
 BINDKEY = bytes(range(0x10, 0x20))
 MAC = bytes.fromhex('d5e76338c1a4')  # A4:C1:38:63:E7:D5 little-endian
@@ -128,6 +131,7 @@ class LYWSD02Firmware:
         self.logger_records = 0
         self.low_vbat = False
         self.beacon = {}
+        self.mi_time_sets = []
 
         # Power-on defaults
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
@@ -180,6 +184,9 @@ class LYWSD02Firmware:
             self._ret(0)
         elif name == 'write_memo':
             self.logger_records += 1
+            self._ret(0)
+        elif name == 'mi_time_set':
+            self.mi_time_sets.append(r0)
             self._ret(0)
         elif name in ('__udivsi3', '__umodsi3'):
             q, m = divmod(r0, r1) if r1 else (0xffffffff, r0)
@@ -274,14 +281,31 @@ class LYWSD02Firmware:
             self.call('mi_encrypt_data_beacon')
             self._decode_beacon()
 
-    def lcd_step(self):
+    def lcd_step(self, force=True):
+        """force: as SET_LCD_UPDATE() (clock minute, settings); False: update after a new measurement only."""
         self.write8('stage_lcd', 0, 0)
+        if force:
+            self.write8('lcd_flg', LCDF_UPDATE_NEXT, 0)
         self.call('lcd')
         self.call('update_lcd')
         if self.read8('stage_lcd', 0):
             self.lcd_frames += 1
             self.write8('stage_lcd', 0, 0)
         return self.display()
+
+    def mi_time_write(self, data):
+        """ATT write to ebe0ccb7; returns the UTC values passed to mi_time_set()."""
+        pkt = bytearray(13 + len(data))  # rf_packet_att_data_t: l2cap at 6, dat at 13
+        struct.pack_into('<H', pkt, 6, len(data) + 3)
+        pkt[13:] = data
+        self.uc.mem_write(SCRATCH, bytes(pkt))
+        self.mi_time_sets = []
+        self.call('mi_time_write', SCRATCH)
+        return self.mi_time_sets
+
+    def mi_time_read(self):
+        self.call('mi_time_read', 0)
+        return self.read('mi_time_val', 0, 7)
 
     def display(self):
         return self.read('display_buff', 0, 16)
@@ -423,12 +447,29 @@ def selftest(elf, binf):
     f.set_flag(2, F3_SHOW_DOW, True)
     show('show day-of-week (Wed=3)', expect=['CLK=16:00[3]'])
     f.set_flag(0, F_AM_PM, True)
-    show('12h AM/PM (16:00 -> 04:00)', expect=['CLK=04:00[4]'])
+    show('12h AM/PM (16:00 -> 04:00, Wed=3)', expect=['CLK=04:00[3]'])
     f.set_flag(0, F_AM_PM, False)
     f.set_flag(2, F3_SHOW_DOW, False)
     for t, e in ((25.15, 'T=25.2°C'), (-3.45, 'T=-3.5°C'), (-12.5, 'T=-13°C')):
         f.set_inputs(temp_c=t)
         show(f'temperature {t} C', expect=[e])
+    f.set_inputs(temp_c=25.19, humi=46.2)
+    show('forced update (clock minute) 25.19 C 46.2%', expect=['T=25.2°C', 'H=46%'])
+
+    def show_meas(title, expect):
+        nonlocal ok
+        f.measure()
+        frames = f.lcd_frames
+        txt = decode(f.lcd_step(force=False), f.screen_off())
+        good = all(e in txt for e in expect)
+        ok &= good
+        print(f'  [{"OK" if good else "FAIL"}] {title:<40} {txt}  (EPD refresh: {f.lcd_frames - frames})')
+    f.set_inputs(temp_c=25.59, humi=48.2)
+    show_meas('measurement +0.4 C +2%: wait for minute', expect=['T=25.2°C', 'H=46%'])
+    f.set_inputs(temp_c=25.79)
+    show_meas('measurement +0.6 C: shown at once', expect=['T=25.8°C', 'H=48%'])
+    f.set_inputs(temp_c=25.79, humi=51.2)
+    show_meas('measurement +3%: shown at once', expect=['T=25.8°C', 'H=51%'])
     f.set_inputs(temp_c=25.19, humi=46.2)
     f.set_flag(0, F_FAHR, True)
     show('Fahrenheit (25.19 C -> 77.4 F)', expect=['T=77.4°F'])
@@ -449,6 +490,31 @@ def selftest(elf, binf):
     f.set_connected(True)
     show('BLE connected', expect=['BLE'])
     f.set_connected(False)
+
+    if 'mi_time_write' in f.sym:
+        # ebe0ccb7 as the original 2.0.1_0021 firmware
+        ts = 1795593600
+        u = struct.pack('<I', ts)
+
+        def tcase(title, data, set_ok, tz=None, mode=None):
+            nonlocal ok
+            sets = f.mi_time_write(data)
+            r = f.mi_time_read()
+            good = (sets == [ts]) == set_ok
+            if tz is not None:
+                good &= struct.unpack('<bb', r[4:6]) == tz
+            if mode is not None:
+                good &= r[6] == mode
+            ok &= good
+            print(f'  [{"OK" if good else "FAIL"}] {title:<40} set={bool(sets)} read={r.hex(" ")}')
+        tcase('time 6 B: UTC-3:30', u + bytes([0xfd, 0xfe]), True, tz=(-3, -2))
+        tcase('time 6 B: +5 h -2 q -> stored +4:30', u + bytes([5, 0xfe]), True, tz=(4, 2))
+        tcase('time 5 B: +24 h -> 0 (mod 24)', u + bytes([24]), True, tz=(0, 0))
+        tcase('time 6 B: invalid tz 25 h -> ignored', u + bytes([25, 0]), False, tz=(0, 0))
+        tcase('time 5 B: UTC+8', u + bytes([8]), True, tz=(8, 0))
+        tcase('time 7 B: 0xAA -> 12h, time not set', u + bytes([8, 0, 0xaa]), False, mode=0xaa)
+        tcase('time 7 B: 0x00 -> 24h', u + bytes([8, 0, 0]), False, mode=0)
+        tcase('time 8 B: ignored', u + bytes([8, 0, 0, 0]), False, tz=(8, 0))
 
     v = f.values()
     if v['c1'] is not None:
@@ -737,9 +803,19 @@ def run_gui(elf, binf, autoclose=0):
                 if (now - state['t_meas']) * 1000 >= fw.measure_interval_ms():
                     state['t_meas'] = now
                     fw.measure()
-                if (now - state['t_lcd']) * 1000 >= fw.lcd_step_ms():
+                    state['measured'] = True  # wrk.msc.b.update_lcd
+                # as main_loop(): the clock minute forces an update (SET_LCD_UPDATE), otherwise only after a new
+                # measurement, or every lcd step while the firmware keeps lcd_flg.update_next_measure = 0
+                minute = fw.clock() // 60
+                if minute != state.get('minute'):
+                    state['minute'] = minute
                     state['t_lcd'] = now
-                    fw.lcd_step()
+                    fw.lcd_step(force=True)
+                elif (now - state['t_lcd']) * 1000 >= fw.lcd_step_ms() and (
+                        state.get('measured') or not fw.read8('lcd_flg', LCDF_UPDATE_NEXT)):
+                    state['t_lcd'] = now
+                    state['measured'] = False
+                    fw.lcd_step(force=False)
                 redraw()
             guard(go)
         root.after(200, tick)
