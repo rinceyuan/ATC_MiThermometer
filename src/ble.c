@@ -70,6 +70,9 @@ void app_enter_ota_mode(void) {
 	{
 		wrk.ota_is_working = OTA_WORK;
 		SHOW_OTA_SCREEN();
+#if USE_MI_TIME_SAVE
+		mi_time_save(); // the newest clock in flash for the restore after the reboot
+#endif
 	}
 	wrk.ble_connected &= ~BIT(CONNECTED_FLG_PAR_UPDATE);
 	bls_pm_setManualLatency(0);

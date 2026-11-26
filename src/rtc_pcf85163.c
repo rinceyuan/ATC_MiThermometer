@@ -64,7 +64,16 @@ void init_rtc(void) {
 //			&& wrk.utc_time_sec > utime
 //			&& wrk.utc_time_sec > 946684800) // Sat Jan 01 2000 00:00:00
 #if USE_MI_AUTH
-			rtc_set_utime(wrk.utc_time_sec + mi_tz_offset_sec());
+			/* VL: the supply was low or the oscillator stopped at some time, the RTC may still be right.
+			 * A running RTC is never behind the saved clock (clock log / logger, older); a reset one
+			 * restarts in 2000. Keep the RTC if plausible and not more than 7 days ahead of the saved
+			 * clock (or if there is no saved clock), otherwise set it from the saved clock. */
+			u32 r = utime - mi_tz_offset_sec();
+			u32 s = wrk.utc_time_sec;
+			if (r >= MI_TIME_MIN && r < 0x80000000u
+				&& (s < MI_TIME_MIN || (r >= s && r - s <= 7 * 86400)))
+				wrk.utc_time_sec = r;
+			rtc_set_utime(wrk.utc_time_sec + mi_tz_offset_sec()); // clears VL
 #else
 			rtc_set_utime(wrk.utc_time_sec);
 #endif

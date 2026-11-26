@@ -38,7 +38,6 @@
 #include "mi_auth.h"
 
 #define MI_FRAME_DATA_SIZE	18 // (ATT_MTU 23) - 3 - 2
-#define MI_TIME_MIN			1577836800u // 2020-01-01: older time = clock was not set
 
 #if (DEV_SERVICES & SERVICE_TIME_ADJUST)
 extern u32 utc_set_time_sec; // cmd_parser.c
@@ -907,6 +906,13 @@ void mi_time_load(void) {
 		wrk.utc_time_sec = t;
 	t = wrk.utc_time_sec;
 	mi_tlog_next = t - (t % MI_TLOG_STEP) + MI_TLOG_STEP;
+}
+
+/* OTA start: save the clock now, so that a restore from the flash after the reboot (RTC not
+ * usable) loses only the OTA time instead of up to 5 minutes */
+void mi_time_save(void) {
+	if (wrk.utc_time_sec >= MI_TIME_MIN)
+		mi_tlog_write(wrk.utc_time_sec);
 }
 
 /* main loop (called when MI_TIME_TASK_DUE()): save the clock every 5 minutes */

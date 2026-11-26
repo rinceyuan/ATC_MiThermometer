@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from elftools.elf.elffile import ELFFile
 from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
-from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_SP, UC_ARM_REG_LR, \
+from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_LR, \
     UC_ARM_REG_PC
 
 from tc32thumb import Translator
@@ -56,11 +56,12 @@ F3_SHOW_DOW = 0x80
 ENTRIES = ['lcd', 'update_lcd', 'WakeupLowPowerCb', 'check_battery', 'get_battery_level',
            'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon',
            'mi_time_write', 'mi_time_read', 'mi_tunit_write', 'mi_tunit_read',
-           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write', 'bat_div_detect']
+           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write', 'bat_div_detect', 'init_rtc']
 STUBS = ['init_lcd', 'send_i2c_byte', 'send_i2c_buf', 'read_sensor_cb', 'get_adc_mv',
          'low_vbat', 'go_sleep', 'write_memo', 'bls_pm_setAppWakeupLowPower',
          '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set',
-         'mi_auth_logged', 'hist_stop', 'clear_memo', 'gpio_setup_up_down_resistor', 'sleep_us']
+         'mi_auth_logged', 'hist_stop', 'clear_memo', 'gpio_setup_up_down_resistor', 'sleep_us',
+         'scan_i2c_addr', 'read_i2c_byte_addr']
 SCRATCH = 0x84e000  # SRAM buffer for ATT write packets
 
 BINDKEY = bytes(range(0x10, 0x20))
@@ -140,6 +141,7 @@ class LYWSD02Firmware:
         self.div_mv = None  # USE_BAT_LIION divider pin (B4P), None: no divider
         self.pd = False     # PB4 internal pull-down on
         self.float_mv = 1700  # open PB4 without pull-down (worst case: looks like a 3.4 V cell)
+        self.rtc_bcd = None   # PCF85163 registers 2..8 for init_rtc (None: no RTC)
 
         # Power-on defaults
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
@@ -204,6 +206,15 @@ class LYWSD02Firmware:
         elif name == 'mi_time_set':
             self.mi_time_sets.append(r0)
             self._ret(0)
+        elif name == 'scan_i2c_addr':  # PCF85163 present (0x51)
+            self._ret(r0 if (r0 >> 1) == 0x51 and self.rtc_bcd is not None else 0)
+        elif name == 'read_i2c_byte_addr':  # RTC registers 2..8 (BCD, seconds bit 7 = VL)
+            r3 = uc.reg_read(UC_ARM_REG_R3)
+            if self.rtc_bcd is None:
+                self._ret(-1)
+            else:
+                uc.mem_write(r2, bytes(self.rtc_bcd[:r3]))
+                self._ret(0)
         elif name == 'gpio_setup_up_down_resistor':
             if r0 == 0x110:  # GPIO_PB4
                 self.pd = (r1 == 2)  # PM_PIN_PULLDOWN_100K
@@ -340,6 +351,20 @@ class LYWSD02Firmware:
         self.logged = on
         if 'mi_auth' in self.sym:
             self.write8('mi_auth', 0, 5 if on else 0)
+
+    def rtc_boot(self, saved_utc, rtc_local, vl):
+        """Power-on init_rtc(): saved clock (clock log / logger) in wrk, RTC local time (None: no RTC)."""
+        if rtc_local is None:
+            self.rtc_bcd = None
+        else:
+            import datetime
+            d = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=rtc_local)
+            b = lambda v: ((v // 10) << 4) | (v % 10)
+            self.rtc_bcd = [b(d.second) | (0x80 if vl else 0), b(d.minute), b(d.hour), b(d.day),
+                            (d.weekday() + 1) % 7, b(d.month), b(d.year % 100)]
+        self.write32('wrk', WRK_UTC, saved_utc)
+        self.call('init_rtc')
+        return self.read32('wrk', WRK_UTC)
 
     def mi_time_read(self):
         self.call('mi_time_read', 0)
@@ -626,6 +651,23 @@ def selftest(elf, binf):
         check('reset data 0x01: history, C, 24h, comfort, UTC+8',
               f.memo_cleared == 1 and f.cmf() == (1900, 2700, 2000, 8500) and not flg & (F_FAHR | F_AM_PM)
               and flg & F_COMFORT and struct.unpack('<bb', f.read('mi_tz', 0, 2)) == (8, 0))
+
+    if 'init_rtc' in f.sym and 'mi_tz' in f.sym:
+        # power-on: clock from the PCF85163 (local time) or the saved clock (clock log / logger)
+        f.write('mi_tz', 0, struct.pack('<bb', 8, 0))
+        t0, tz = 1795593600, 8 * 3600
+        for title, saved, rtc_local, vl, exp in (
+                ('RTC ok: RTC time', t0, t0 + tz + 100, False, t0 + 100),
+                ('RTC VL, RTC 10 min ahead of saved: RTC', t0, t0 + tz + 600, True, t0 + 600),
+                ('RTC VL, RTC reset (2000): saved', t0, 946684800 + tz, True, t0),
+                ('RTC VL, nothing saved: RTC (was 1970)', 0, t0 + tz, True, t0),
+                ('RTC VL, RTC 30 days ahead: saved', t0, t0 + tz + 30 * 86400, True, t0),
+                ('RTC VL, RTC behind saved: saved', t0, t0 + tz - 600, True, t0),
+                ('no RTC: saved', t0, None, False, t0)):
+            got = f.rtc_boot(saved, rtc_local, vl)
+            check('boot ' + title, got == exp, f'{got - t0:+d} s')
+        f.rtc_bcd = None
+        f.set_clock(1795593600, tz_hours=8)
 
     if 'get_liion_mv' in f.sym:
         # USE_BAT_LIION: Li-ion cell through an LDO (3300 mV), divider 1M/1M on PB4

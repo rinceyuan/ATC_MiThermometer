@@ -9,6 +9,8 @@
 
 #if USE_MI_AUTH
 
+#define MI_TIME_MIN			1577836800u // 2020-01-01: older time = clock was not set
+
 #define MI_UUID_VERSION		0x0004
 #define MI_UUID_AUTH		0x0010
 #define MI_UUID_STANDARD	0x0019
@@ -51,6 +53,7 @@ void mi_time_set(u32 t);		// set clock (UTC); clears the logger on a step back >
 #if USE_MI_TIME_SAVE
 void mi_time_load(void);		// power-on: restore the clock saved in flash (0x7A000)
 void mi_time_task(void);		// main loop: save the clock every 5 minutes
+void mi_time_save(void);		// save the clock now (OTA start: restored after the reboot)
 extern u32 mi_tlog_next;
 #define MI_TIME_TASK_DUE()	(wrk.utc_time_sec >= mi_tlog_next)
 #endif
