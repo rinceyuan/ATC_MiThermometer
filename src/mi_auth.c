@@ -32,6 +32,9 @@
 #if (DEV_SERVICES & SERVICE_HISTORY)
 #include "logger.h"
 #endif
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+#include "rtc.h"
+#endif
 #include "mi_auth.h"
 
 #define MI_FRAME_DATA_SIZE	18 // (ATT_MTU 23) - 3 - 2
@@ -42,13 +45,34 @@ extern u32 utc_set_time_sec; // cmd_parser.c
 #endif
 
 /* --- GATT values --- */
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+const u8 mi_version_str[10] = {'2','.','0','.','1','_','0','0','2','1'};
+#else
 const u8 mi_version_str[10] = {'2','.','1','.','1','_','0','0','0','9'};
+#endif
 const u8 mi_wo_val[20] = {0};
 RAM u16 mi_auth_ccc;
 RAM u16 mi_std_ccc;
 RAM u8 mi_th_val[5];
 RAM u8 mi_tunit_val;
 RAM u16 mi_th_ccc;
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+RAM u8 mi_time_val[7];
+RAM s8 mi_tz[2]; // [0] = timezone hour (-24..24), [1] = 15-min quarter (-4..4)
+
+s32 mi_tz_offset_sec(void) {
+	return ((s32)mi_tz[0] * 60 + (s32)mi_tz[1] * 15) * 60;
+}
+
+int mi_time_read(void * p) {
+	(void) p;
+	memcpy(mi_time_val, &wrk.utc_time_sec, 4);
+	mi_time_val[4] = (u8)mi_tz[0];
+	mi_time_val[5] = (u8)mi_tz[1];
+	mi_time_val[6] = cfg.flg.time_am_pm ? 0xAA : 0;
+	return 0;
+}
+#endif
 
 /* --- login state --- */
 enum {
@@ -363,6 +387,28 @@ int mi_std_write(void * p) {
 int mi_time_write(void * p) {
 	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
 	u32 len = req->l2cap - 3;
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	if (len == 7) {
+		u8 am_pm = (req->dat[6] == 0xAA) ? 1 : 0;
+		if (cfg.flg.time_am_pm != am_pm) {
+			cfg.flg.time_am_pm = am_pm;
+			flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
+			SET_LCD_UPDATE();
+		}
+		return 0;
+	}
+	if (len >= 5) {
+		s8 tz_h = (s8)req->dat[4];
+		s8 tz_q = (len >= 6) ? (s8)req->dat[5] : 0;
+		if (tz_h >= -24 && tz_h <= 24 && tz_q >= -4 && tz_q <= 4) {
+			if (mi_tz[0] != tz_h || mi_tz[1] != tz_q) {
+				mi_tz[0] = tz_h;
+				mi_tz[1] = tz_q;
+				flash_write_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz));
+			}
+		}
+	}
+#endif
 	if (len >= 4) {
 		u32 t;
 		memcpy(&t, req->dat, 4);
@@ -730,6 +776,13 @@ static int mi_tlog_write(u32 t) {
  *  t + 6 min < l <= t + 1 h: t (the clock was set back: the newest records are ahead);
  *  l > t + 1 h: l (area left by the original firmware or not written for a long time). */
 void mi_time_load(void) {
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	if (flash_read_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz)) != sizeof(mi_tz)
+		|| mi_tz[0] < -24 || mi_tz[0] > 24 || mi_tz[1] < -4 || mi_tz[1] > 4) {
+		mi_tz[0] = 8; // default UTC+8
+		mi_tz[1] = 0;
+	}
+#endif
 	u32 a, v, t = 0, l = wrk.utc_time_sec;
 	for (a = MI_TLOG_START; a < MI_TLOG_END; a += 4) {
 		flash_read_page(FLASH_BASE_ADDR + a, 4, (u8 *)&v);
@@ -769,6 +822,9 @@ void mi_time_set(u32 t) {
 	wrk.utc_time_sec = t;
 #if (DEV_SERVICES & SERVICE_TIME_ADJUST)
 	utc_set_time_sec = t;
+#endif
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	rtc_set_utime(t + mi_tz_offset_sec());
 #endif
 #if USE_MI_TIME_SAVE
 	if (t >= MI_TIME_MIN) {

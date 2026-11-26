@@ -707,7 +707,11 @@ RAM attribute_t my_Attributes[] = {
 	// Mi data service ebe0ccb0 (original firmware compatible)
 	{MI_TH_SRV_ATTS,ATT_PERMISSIONS_READ, 2,16,(u8*)(&my_primaryServiceUUID),(u8*)(mi_th_service_uuid), 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_time_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_time_CharVal), 0},
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_time_val),(u8*)(&mi_th_time_CharVal[3]),(u8*)(mi_time_val), &mi_time_write, &mi_time_read},
+#else
 		{0,ATT_PERMISSIONS_RDWR,16,sizeof(wrk.utc_time_sec),(u8*)(&mi_th_time_CharVal[3]),(u8*)(&wrk.utc_time_sec), &mi_time_write, 0},
+#endif
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_tunit_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_tunit_CharVal), 0},
 		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_tunit_val),(u8*)(&mi_th_tunit_CharVal[3]),(u8*)(&mi_tunit_val), &mi_tunit_write, 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_data_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_data_CharVal), 0},

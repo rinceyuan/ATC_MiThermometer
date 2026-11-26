@@ -29,7 +29,8 @@ typedef enum {
 	EEP_ID_KEY,	// EEP ID bkey
 	EEP_ID_HWV, // EEP ID Mi HW version ("B1.4","B1.5",...)
 	EEP_ID_MTN,	// EEP ID motion sensor
-	EEP_ID_MBC	// EEP ID MiBeacon frame counter (USE_MIHOME_SPEC_BEACON)
+	EEP_ID_MBC,	// EEP ID MiBeacon frame counter (USE_MIHOME_SPEC_BEACON)
+	EEP_ID_MTZ	// EEP ID Mi timezone (s8 hour, s8 quarter_15m)
 } EEP_ID_e;
 //--Option---------------------------------------------------------------------
 #define USE_EEP_BANKS	0  // = 1 используется 2 банка, = 0 без банков

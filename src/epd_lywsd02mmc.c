@@ -12,6 +12,12 @@
 
 #define DEF_EPD_REFRESH_CNT 2048
 
+#if USE_MI_BATTERY_CURVE
+#define EPD_LOW_BAT_LEVEL	LOW_BATTERY_LEVEL // 10% (2400 mV) as the original firmware
+#else
+#define EPD_LOW_BAT_LEVEL	15
+#endif
+
 #define LOW     0
 #define HIGH    1
 
@@ -321,7 +327,7 @@ void show_battery_symbol(bool state) {
 	display_buff[10] &= ~(BIT(6) | BIT(7));
 	if (state) {
 		display_buff[10] |= BIT(6);
-		if (measured_data.battery_level > 16) {
+		if (measured_data.battery_level > EPD_LOW_BAT_LEVEL) {
 			display_buff[10] |= BIT(7);
 		}
 	}
@@ -496,8 +502,8 @@ static void show_s2_number(u32 number, u8 atr){
 
 	if (number > 1999) {
 		// "Hi"
-		lcd_set_digit(display_buff, SYMB_H, sb_s4[1]);
-		lcd_set_digit(display_buff, SYMB_i, sb_s4[2]);
+		lcd_set_digit(display_buff, SYMB_H, sb_s2[1]);
+		lcd_set_digit(display_buff, SYMB_i, sb_s2[2]);
 	} else {
 		/* number: 0..1999 */
 		if (number > 999) display_buff[11] |= BIT(1); // "1" 1000..1999
@@ -739,7 +745,7 @@ void lcd(void) {
 			show_smiley(is_comfort(measured_data.temp, measured_data.humi));
 		else
 			show_smiley(cfg.flg2.smiley);
-		if(cfg.flg.show_battery || measured_data.battery_level < 16)
+		if(cfg.flg.show_battery || measured_data.battery_level <= EPD_LOW_BAT_LEVEL)
 			show_battery_symbol(1);
 		else
 			show_battery_symbol(0);
@@ -751,8 +757,9 @@ void lcd(void) {
 	}
 	show_s3_number(measured_data.humi_x1, 1);
 	if (cfg.flg.temp_F_or_C) {
-		// convert C to F
-		show_s4_number_x10(((measured_data.temp_x01 / 5) * 9) + 320, 2); // convert C to F
+		// convert C to F (rounded to nearest 0.1 F)
+		s32 t = measured_data.temp_x01;
+		show_s4_number_x10(((t * 9 + (t < 0 ? -2 : 2)) / 5) + 320, 2);
 	} else {
 		show_s4_number_x10(measured_data.temp_x01, 1);
 	}

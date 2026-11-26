@@ -8,6 +8,42 @@
 #include "app.h"
 #include "drivers/8258/gpio_8258.h"
 
+void i2c_bus_recover(void) {
+	if (I2C_GROUP == I2C_GPIO_GROUP_C0C1) {
+		// Unconditional 18-clock I2C bus recovery + STOP + HW I2C reset (PC0=SDA, PC1=SCL)
+		gpio_set_func(GPIO_PC0, AS_GPIO);
+		gpio_set_func(GPIO_PC1, AS_GPIO);
+		gpio_set_output_en(GPIO_PC0, 0);
+		gpio_set_input_en(GPIO_PC0, 1);
+		gpio_setup_up_down_resistor(GPIO_PC0, PM_PIN_PULLUP_10K);
+		gpio_setup_up_down_resistor(GPIO_PC1, PM_PIN_PULLUP_10K);
+		gpio_write(GPIO_PC1, 1);
+		gpio_set_output_en(GPIO_PC1, 1);
+		sleep_us(20);
+		for (int i = 0; i < 18; i++) {
+			gpio_write(GPIO_PC1, 0);
+			sleep_us(20);
+			gpio_write(GPIO_PC1, 1);
+			sleep_us(20);
+		}
+		// Clean START -> STOP sequence to reset slave I2C state machines
+		gpio_write(GPIO_PC0, 0);
+		gpio_set_output_en(GPIO_PC0, 1);
+		sleep_us(20);
+		gpio_write(GPIO_PC1, 0);
+		sleep_us(20);
+		gpio_write(GPIO_PC1, 1);
+		sleep_us(20);
+		gpio_write(GPIO_PC0, 1);
+		sleep_us(20);
+		gpio_set_output_en(GPIO_PC0, 0);
+		gpio_set_output_en(GPIO_PC1, 0);
+	}
+	reg_rst0 = FLD_RST0_I2C;
+	reg_rst0 = 0;
+	init_i2c();
+}
+
 _attribute_ram_code_
 void init_i2c(void) {
 	i2c_gpio_set(I2C_GROUP); // I2C_GPIO_GROUP_C0C1, I2C_GPIO_GROUP_C2C3, I2C_GPIO_GROUP_B6D7, I2C_GPIO_GROUP_A3A4

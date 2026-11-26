@@ -104,11 +104,14 @@ u32 find_mi_keys(u16 chk_id, u8 cnt) {
 /* if return != 0 -> keybuf = keys */
 u32 find_mi_keys(u16 chk_id, u8 cnt) {
 	u32 faddr = FLASH_MIKEYS_ADDR;
+	u8 fbuf[3];
+	_flash_read(faddr, sizeof(fbuf), &fbuf);
+	if (fbuf[0] == 0xff && fbuf[1] == 0xff && fbuf[2] == 0xff)
+		faddr += FLASH_SECTOR_SIZE; // active ping-pong sector is 0x79000
 	u32 faend = faddr + FLASH_SECTOR_SIZE;
 	pblk_mi_keys_t pk = &keybuf;
 	u16 id;
 	u8 len;
-	u8 fbuf[3];
 	do {
 		_flash_read(faddr, sizeof(fbuf), &fbuf);
 		id = fbuf[0] | (fbuf[1] << 8);
@@ -120,7 +123,7 @@ u32 find_mi_keys(u16 chk_id, u8 cnt) {
 			return faddr;
 		}
 		faddr += len;
-	} while (id != 0xffff || len != 0xff || faddr < faend);
+	} while ((id != 0xffff || len != 0xff) && faddr < faend);
 	return 0;
 }
 #endif
@@ -595,9 +598,9 @@ void cmd_parser(void * p) {
 #if (DEV_SERVICES & SERVICE_TIME_ADJUST)
 				utc_set_time_sec = wrk.utc_time_sec;
 #endif
-#endif
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 				rtc_set_utime(wrk.utc_time_sec);
+#endif
 #endif
 				SET_LCD_UPDATE();
 			}
@@ -680,6 +683,9 @@ void cmd_parser(void * p) {
 #endif
 #if defined(I2C_GROUP) || defined(I2C_SDA)
 		} else if (cmd == CMD_ID_I2C_SCAN) {   // Universal I2C/SMBUS read-write
+#ifdef I2C_GROUP
+			i2c_bus_recover();
+#endif
 			len = 0;
 			olen = 1;
 			while(len < 0x100 && olen < SEND_BUFFER_SIZE) {

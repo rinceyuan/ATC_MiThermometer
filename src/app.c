@@ -293,6 +293,9 @@ const cfg_t def_cfg = {
 #endif
 #elif (DEVICE_TYPE == DEVICE_LYWSD02MMC)
 		.flg2.adv_flags = true,
+#if USE_MI_AUTH
+		.flg2.adv_crypto = true, // MiHome: encrypted MiBeacon, bindkey from the Mi key record
+#endif
 		.advertising_interval = 60, // multiply by 62.5 ms = 3.750 sec
 		.measure_interval = 4, // * advertising_interval = 15 sec
 		.min_step_time_update_lcd = 49, //x0.05 sec,   2.45 sec
@@ -924,6 +927,14 @@ void user_init_normal(void) {//this will get executed one time after power up
 			cfg.flg2.longrange = 0;
 			flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
 		}
+#if USE_MI_AUTH
+		// upgrading from a non-MiHome build (< 6.0): switch to encrypted MiBeacon
+		if ((old_ver >> 16) < 0x60) {
+			cfg.flg.advertising_type = ADV_TYPE_MI;
+			cfg.flg2.adv_crypto = 1;
+			flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
+		}
+#endif
 	} else {
 #if (DEV_SERVICES & SERVICE_PINCODE)
 		pincode = 0;
@@ -957,7 +968,7 @@ void user_init_normal(void) {//this will get executed one time after power up
 	init_my18b20();
 #endif
 #ifdef I2C_GROUP
-	init_i2c();
+	i2c_bus_recover();
 	reg_i2c_speed = (u8)(CLOCK_SYS_CLOCK_HZ/(4*100000)); // 100 kHz
 #endif
 	test_config();
@@ -1229,6 +1240,7 @@ void main_loop(void) {
 #endif
 #if SENSOR_SLEEP_MEASURE
 		if (wrk.start_measure
+			&& !wrk.ota_is_working
 			&& sensor_cfg.time_measure == 0
 //			&& bls_pm_getSystemWakeupTick() - new > sensor_cfg.measure_timeout + 5*CLOCK_16M_SYS_TIMER_CLK_1MS // есть время на замер ?
 			) {
@@ -1340,9 +1352,14 @@ void main_loop(void) {
 				}
 			}
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
-			else if(rtc_sync_utime) {
+			// hourly RTC resync also while connected: the software tick advances only the minutes
+			if(rtc_sync_utime) {
 				rtc_sync_utime = 0;
+#if USE_MI_AUTH
+				wrk.utc_time_sec = rtc_get_utime() - mi_tz_offset_sec();
+#else
 				wrk.utc_time_sec = rtc_get_utime();
+#endif
 			}
 #endif // (DEV_SERVICES & SERVICE_HARD_CLOCK)
 #if (DEV_SERVICES & (SERVICE_THS | SERVICE_IUS | SERVICE_18B20 | SERVICE_PLM))

@@ -3030,6 +3030,23 @@ GPIO_D7 - SDA
 // GPIO_PD4 - free
 // GPIO_PD7 - used EPD_SHD
 
+#ifndef USE_MI_AUTH
+#define USE_MI_AUTH			1 // MiHome app: Mi standard-auth login + ebe0ccb0 data service
+#endif
+#if USE_MI_AUTH
+/* MiHome build: without LE Long Range (MiHome / Mi gateways use legacy advertising only),
+ * reed switch, trigger output and pincode (a pincode locks out MiHome): -6 KB retention RAM */
+#define DEV_SERVICES ( SERVICE_OTA \
+		| SERVICE_OTA_EXT \
+		| SERVICE_BINDKEY \
+		| SERVICE_HISTORY \
+		| SERVICE_SCREEN \
+		| SERVICE_THS \
+		| SERVICE_HARD_CLOCK \
+		| SERVICE_TIME_ADJUST \
+		| SERVICE_MI_KEYS \
+)
+#else
 #define DEV_SERVICES ( SERVICE_OTA\
 		| SERVICE_OTA_EXT \
 		| SERVICE_PINCODE \
@@ -3043,7 +3060,17 @@ GPIO_D7 - SDA
 		| SERVICE_TH_TRG \
 		| SERVICE_MI_KEYS \
 )
+#endif
 #define USE_FLASH_SERIAL_UID	1
+#ifndef USE_MIHOME_SPEC_BEACON
+#define USE_MIHOME_SPEC_BEACON	USE_MI_AUTH // encrypted MiBeacon as the original firmware (MIoT spec objects) for Mi BLE gateways
+#endif
+#ifndef USE_MI_BATTERY_CURVE
+#define USE_MI_BATTERY_CURVE	USE_MI_AUTH // battery % as the original firmware (MiHome shows the same value)
+#endif
+#if USE_MI_AUTH && !defined(DEV_NAME_DEFAULT)
+#define DEV_NAME_DEFAULT	"LYWSD02MMC" // default BLE name as the original firmware
+#endif
 
 #define USE_EPD			(550/50 - 1) // min update time ms
 
@@ -3062,8 +3089,8 @@ GPIO_D7 - SDA
 #define PB0_FUNC			AS_GPIO
 
 #define I2C_MAX_SPEED 		400000 // 400 kHz
-#define I2C_SCL 			GPIO_PC0
-#define I2C_SDA 			GPIO_PC1
+#define I2C_SDA 			GPIO_PC0
+#define I2C_SCL 			GPIO_PC1
 #define I2C_GROUP 			I2C_GPIO_GROUP_C0C1
 #define PULL_WAKEUP_SRC_PC0	PM_PIN_PULLUP_10K
 #define PULL_WAKEUP_SRC_PC1	PM_PIN_PULLUP_10K

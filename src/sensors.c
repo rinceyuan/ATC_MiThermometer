@@ -618,7 +618,9 @@ static int check_sensor(void) {
 #endif
 	sensor_cfg.id = 0;
 #if USE_SENSOR_SHTC3
-	// cfg.hw_cfg.shtc3 = 0;
+	// Wake SHTC3 unconditionally before scanning: after an OTA soft-reboot a sleeping SHTC3 NAKs bare address scans
+	send_i2c_word(SHTC3_I2C_ADDR << 1, SHTC3_WAKEUP);
+	sleep_us(SHTC3_WAKEUP_us);	// 240 us
 	// Scan I2C addr 0x70
 	if ((sensor_cfg.i2c_addr = (u8) scan_i2c_addr(SHTC3_I2C_ADDR << 1)) != 0) {
 		// SHTC3

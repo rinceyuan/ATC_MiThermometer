@@ -246,10 +246,7 @@ void ev_adv_timeout(u8 e, u8 *p, int n);
 void set_pvvx_adv_data(void);
 void set_atc_adv_data(void);
 void set_mi_adv_data(void);
-
-#if (DEV_SERVICES & SERVICE_LE_LR)
 void load_adv_data(void);
-#endif
 
 #if (DEV_SERVICES & (SERVICE_THS | SERVICE_18B20 | SERVICE_PLM))
 inline void ble_send_temp01(void) {

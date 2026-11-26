@@ -12,6 +12,9 @@
 #include "i2c.h"
 #include "rtc.h"
 #include "app.h"
+#if USE_MI_AUTH
+#include "mi_auth.h"
+#endif
 
 #define RTC_I2C_ADDR 0x51
 
@@ -60,11 +63,25 @@ void init_rtc(void) {
 		if (rtc_reg.reg.r.sec & 0x80) {
 //			&& wrk.utc_time_sec > utime
 //			&& wrk.utc_time_sec > 946684800) // Sat Jan 01 2000 00:00:00
+#if USE_MI_AUTH
+			rtc_set_utime(wrk.utc_time_sec + mi_tz_offset_sec());
+#else
 			rtc_set_utime(wrk.utc_time_sec);
+#endif
 		} else {
+#if USE_MI_AUTH
+			wrk.utc_time_sec = utime - mi_tz_offset_sec();
+#else
 			wrk.utc_time_sec = utime;
+#endif
 			rtc_sync_utime = 0;
 		}
+	} else {
+#if USE_MI_AUTH
+		utime_to_rtc(wrk.utc_time_sec + mi_tz_offset_sec(), &rtc);
+#else
+		utime_to_rtc(wrk.utc_time_sec, &rtc);
+#endif
 	}
 }
 
@@ -168,7 +185,11 @@ u32 rtc_get_utime(void) {
 	if(rtc_read_all() == 0)
 		rtc_regs(&rtc);
 	else
+#if USE_MI_AUTH
+		utime_to_rtc(wrk.utc_time_sec + mi_tz_offset_sec(), &rtc);
+#else
 		utime_to_rtc(wrk.utc_time_sec, &rtc);
+#endif
 	return rtc_to_utime(&rtc);
 }
 

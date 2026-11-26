@@ -33,6 +33,11 @@ extern u16 mi_th_ccc;
 int mi_auth_write(void * p);	// 0x0010 write
 int mi_std_write(void * p);		// 0x0019 write
 int mi_time_write(void * p);	// ebe0ccb7 write
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+extern u8 mi_time_val[7];
+int mi_time_read(void * p);		// ebe0ccb7 read (utc + tz + 12/24h mode)
+s32 mi_tz_offset_sec(void);
+#endif
 int mi_tunit_write(void * p);	// ebe0ccbe write
 int mi_disc_write(void * p);	// ebe0ccc8 write: 0x88 - terminate connection
 void mi_time_set(u32 t);		// set clock (UTC); clears the logger on a step back > 1 hour
