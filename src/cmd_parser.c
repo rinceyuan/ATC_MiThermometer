@@ -406,6 +406,9 @@ void cmd_parser(void * p) {
 			}
 			if(tmp & MASK_FLG2_SCR_OFF)
 				init_lcd();
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+			SET_LCD_UPDATE(); // C/F, battery, smiley of the default config
+#endif
 			ev_adv_timeout(0, 0, 0);
 			flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
 			ble_send_cfg();
@@ -533,7 +536,11 @@ void cmd_parser(void * p) {
 				lcd_flg.update = 1;	// SET_LCD_UPDATE();
 			} else if(lcd_flg.b.ext_data_buf) {
 				lcd_flg.b.ext_data_buf = 0;
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+				SET_LCD_UPDATE(); // redraw all: lcd() skips small measurement changes otherwise
+#else
 				lcd_flg.update = 1;	// SET_LCD_UPDATE();
+#endif
 			}
 			ble_send_lcd();
 		} else if (cmd == CMD_ID_LCD_FLG) { // Start/stop notify lcd dump and ...
@@ -563,6 +570,9 @@ void cmd_parser(void * p) {
 			if (len) {
 				if (len > sizeof(cmf)) len = sizeof(cmf);
 				memcpy(&cmf, &req->dat[1], len);
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+				SET_LCD_UPDATE(); // comfort smiley
+#endif
 			}
 			flash_write_cfg(&cmf, EEP_ID_CMF, sizeof(cmf));
 			ble_send_cmf();
