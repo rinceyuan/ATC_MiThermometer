@@ -3174,6 +3174,32 @@ GPIO_D7 - SDA
 #define PULL_WAKEUP_SRC_PA2	PM_PIN_PULLDOWN_100K
 #endif
 
+/* USE_BAT_LIION: Li-ion/LiPo 3.7 V cell through an LDO (the chip only sees the LDO output).
+ * The cell voltage is measured through a divider: Cell+ --R1-- PB4 --R2-- GND, 100 nF PB4-GND
+ * (the capacitor holds the high-impedance node for the ADC sample). Without the divider the
+ * level only drops when the LDO goes into dropout (cell nearly empty). */
+#ifndef USE_BAT_LIION
+#define USE_BAT_LIION		0
+#endif
+#if USE_BAT_LIION
+#if (DEV_SERVICES & SERVICE_RDS) && (DEV_SERVICES & SERVICE_KEY)
+#error "USE_BAT_LIION: PB4 is the reed switch input"
+#endif
+#define GPIO_VBAT_DIV		GPIO_PB4 // pad R4
+#define SHL_ADC_VBAT_DIV	B4P
+#define PB4_INPUT_ENABLE	0
+#define PB4_DATA_OUT		0
+#define PB4_OUTPUT_ENABLE	0
+#define PB4_FUNC			AS_GPIO
+#define PULL_WAKEUP_SRC_PB4	PM_PIN_UP_DOWN_FLOAT
+#ifndef VBAT_DIV_R1_K
+#define VBAT_DIV_R1_K		1000 // kOhm, Cell+ to PB4
+#endif
+#ifndef VBAT_DIV_R2_K
+#define VBAT_DIV_R2_K		1000 // kOhm, PB4 to GND
+#endif
+#endif // USE_BAT_LIION
+
 #elif DEVICE_TYPE == DEVICE_ZG204ZL
 
 // TLSR8253F512AT32 512K Flash
@@ -3785,8 +3811,14 @@ GPIO_PD7 - LED to +Vbat
 #ifndef USE_MI_BATTERY_CURVE
 #define USE_MI_BATTERY_CURVE	0 // = 1 battery %: 100% above 2700 mV as the original Xiaomi firmware, below linear through its levels
 #endif
+#ifndef USE_BAT_LIION
+#define USE_BAT_LIION	0 // = 1 Li-ion cell through an LDO, cell voltage through a divider (see DEVICE_LYWSD02MMC)
+#endif
+#if USE_BAT_LIION && !(defined(SHL_ADC_VBAT_DIV) && defined(VBAT_DIV_R1_K) && defined(VBAT_DIV_R2_K))
+#error "USE_BAT_LIION requires SHL_ADC_VBAT_DIV, VBAT_DIV_R1_K and VBAT_DIV_R2_K"
+#endif
 #ifndef LOW_BATTERY_LEVEL
-#if USE_MI_BATTERY_CURVE
+#if USE_MI_BATTERY_CURVE || USE_BAT_LIION
 #define LOW_BATTERY_LEVEL	10 // LCD shows the battery at <= 10% (2400 mV, as the original firmware)
 #else
 #define LOW_BATTERY_LEVEL	5  // LCD shows the battery at <= 5%

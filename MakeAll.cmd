@@ -119,6 +119,9 @@ python3 utils\zb_bin_ota.py ZB2TH01%SWVER%.bin zigbee_ota\ZB2TH01BLE%SWVER% -m0x
 @del /Q "LYWSD02MMC_v60.bin"
 make -s -j PROJECT_NAME=LYWSD02MMC_v60 POJECT_DEF="-DDEVICE_TYPE=DEVICE_LYWSD02MMC"
 @if not exist "LYWSD02MMC_v60.bin" goto :error
+@del /Q "LYWSD02MMC_v60_liion.bin"
+make -s -j PROJECT_NAME=LYWSD02MMC_v60_liion POJECT_DEF="-DDEVICE_TYPE=DEVICE_LYWSD02MMC -DUSE_BAT_LIION=1"
+@if not exist "LYWSD02MMC_v60_liion.bin" goto :error
 @del /Q "ZG204ZV%SWVER%.bin"
 make -s -j PROJECT_NAME=ZG204ZV%SWVER% POJECT_DEF="-DDEVICE_TYPE=DEVICE_ZG204ZV"
 @if not exist "ZG204ZV%SWVER%.bin" goto :error

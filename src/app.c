@@ -766,6 +766,9 @@ void check_battery(void) {
 	if (measured_data.battery_mv < END_VBAT_MV) { // It is not recommended to write Flash below 2V
 		low_vbat();
 	}
+#if USE_BAT_LIION
+	measured_data.battery_mv = get_liion_mv(measured_data.battery_mv); // cell voltage (supply checked above)
+#endif
 #endif
 #if USE_AVERAGE_BATTERY
 	bat_average.buf_sum += measured_data.battery_mv;
@@ -879,6 +882,9 @@ void user_init_normal(void) {//this will get executed one time after power up
 	adc_power_on_sar_adc(0); // - 0.4 mA
 	lpc_power_down();
 	start_tst_battery();
+#if USE_BAT_LIION
+	bat_div_detect();
+#endif
 	flash_unlock();
 	random_generator_init(); //must
 #if !ZIGBEE_TUYA_OTA // USE_EXT_OTA

@@ -56,11 +56,11 @@ F3_SHOW_DOW = 0x80
 ENTRIES = ['lcd', 'update_lcd', 'WakeupLowPowerCb', 'check_battery', 'get_battery_level',
            'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon',
            'mi_time_write', 'mi_time_read', 'mi_tunit_write', 'mi_tunit_read',
-           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write']
+           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write', 'bat_div_detect']
 STUBS = ['init_lcd', 'send_i2c_byte', 'send_i2c_buf', 'read_sensor_cb', 'get_adc_mv',
          'low_vbat', 'go_sleep', 'write_memo', 'bls_pm_setAppWakeupLowPower',
          '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set',
-         'mi_auth_logged', 'hist_stop', 'clear_memo']
+         'mi_auth_logged', 'hist_stop', 'clear_memo', 'gpio_setup_up_down_resistor', 'sleep_us']
 SCRATCH = 0x84e000  # SRAM buffer for ATT write packets
 
 BINDKEY = bytes(range(0x10, 0x20))
@@ -136,6 +136,10 @@ class LYWSD02Firmware:
         self.mi_time_sets = []
         self.logged = True  # MiHome login state (mi_auth_logged)
         self.memo_cleared = 0
+        self.vdd_mv = None  # supply (B0P) if not vbat_mv: USE_BAT_LIION LDO output
+        self.div_mv = None  # USE_BAT_LIION divider pin (B4P), None: no divider
+        self.pd = False     # PB4 internal pull-down on
+        self.float_mv = 1700  # open PB4 without pull-down (worst case: looks like a 3.4 V cell)
 
         # Power-on defaults
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
@@ -182,7 +186,15 @@ class LYWSD02Firmware:
             self.sensor_reads += 1
             self._ret(1)
         elif name == 'get_adc_mv':
-            self._ret(self.vbat_mv)
+            # B0P (1): supply; B4P (5): USE_BAT_LIION divider pin. With the 100k pull-down: divider
+            # 1M/1M -> 0.083 * cell, open pin -> 0 V; without it an open pin floats (float_mv).
+            if r0 == 5:
+                if self.div_mv is None:
+                    self._ret(0 if self.pd else self.float_mv)
+                else:
+                    self._ret(int(self.div_mv * 2 * 0.0833) if self.pd else self.div_mv)
+            else:
+                self._ret(self.vdd_mv if self.vdd_mv is not None else self.vbat_mv)
         elif name in ('low_vbat', 'go_sleep'):
             self.low_vbat = True
             self._ret(0)
@@ -191,6 +203,10 @@ class LYWSD02Firmware:
             self._ret(0)
         elif name == 'mi_time_set':
             self.mi_time_sets.append(r0)
+            self._ret(0)
+        elif name == 'gpio_setup_up_down_resistor':
+            if r0 == 0x110:  # GPIO_PB4
+                self.pd = (r1 == 2)  # PM_PIN_PULLDOWN_100K
             self._ret(0)
         elif name == 'mi_auth_logged':
             self._ret(1 if self.logged else 0)
@@ -498,15 +514,17 @@ def selftest(elf, binf):
     f.set_flag(0, F_FAHR, False)
     f.set_flag(0, F_SHOW_BAT, True)
     show('show battery in S2 (2950 mV -> 100%)', expect=['S2=100%', 'BAT_FULL'])
-    f.set_inputs(vbat_mv=2350)
-    f.reset_battery_average()
-    show('low battery (2350 mV -> 8%)', expect=['S2=8%', 'BAT_LOW'])
+    if 'get_liion_mv' not in f.sym:  # coin cell curve (USE_BAT_LIION: Li-ion tests below)
+        f.set_inputs(vbat_mv=2350)
+        f.reset_battery_average()
+        show('low battery (2350 mV -> 8%)', expect=['S2=8%', 'BAT_LOW'])
+        f.set_flag(0, F_SHOW_BAT, False)
+        f.set_inputs(vbat_mv=2412)
+        f.reset_battery_average()
+        if 'BAT' in show('no low battery icon above 10% (2412 mV -> 14%)'):
+            print('  [FAIL] battery icon shown above LOW_BATTERY_LEVEL')
+            ok = False
     f.set_flag(0, F_SHOW_BAT, False)
-    f.set_inputs(vbat_mv=2412)
-    f.reset_battery_average()
-    if 'BAT' in show('no low battery icon above 10% (2412 mV -> 14%)'):
-        print('  [FAIL] battery icon shown above LOW_BATTERY_LEVEL')
-        ok = False
     f.set_inputs(vbat_mv=2950)
     f.reset_battery_average()
     f.set_connected(True)
@@ -608,6 +626,34 @@ def selftest(elf, binf):
         check('reset data 0x01: history, C, 24h, comfort, UTC+8',
               f.memo_cleared == 1 and f.cmf() == (1900, 2700, 2000, 8500) and not flg & (F_FAHR | F_AM_PM)
               and flg & F_COMFORT and struct.unpack('<bb', f.read('mi_tz', 0, 2)) == (8, 0))
+
+    if 'get_liion_mv' in f.sym:
+        # USE_BAT_LIION: Li-ion cell through an LDO (3300 mV), divider 1M/1M on PB4
+        def liion(title, vdd, cell, exp_mv, exp_pc):
+            f.vdd_mv = vdd
+            f.div_mv = None if cell is None else cell // 2
+            f.call('bat_div_detect')  # power-on detection
+            f.reset_battery_average()
+            f.measure()
+            v = f.values()
+            check(title, v['mv'] == exp_mv and v['batt'] == exp_pc, f'{v["mv"]} mV {v["batt"]}%')
+        for cell, pc in ((4200, 100), (3820, 50), (3680, 10), (3500, 6), (3300, 0)):
+            liion(f'Li-ion divider: cell {cell} mV -> {pc}%', 3300, cell, cell, pc)
+        f.write('bat_vdd_max_mv', 0, b'\0\0')
+        liion('no divider: LDO 3300 mV -> 100%', 3300, None, 3300, 100)
+        liion('no divider: dropout 3200 mV -> 8%', 3200, None, 3200, 8)
+        liion('no divider: dropout 2900 mV -> 0%', 2900, None, 2900, 0)
+        liion('divider below supply (implausible) -> supply', 3300, 2000, 3300, 100)
+        f.vdd_mv, f.div_mv = 3300, 3600 // 2
+        f.reset_battery_average()
+        show('Li-ion 3600 mV (8%): low battery icon', expect=['BAT_LOW'])
+        f.div_mv = 3750 // 2
+        f.reset_battery_average()
+        if 'BAT' in show('Li-ion 3750 mV (23%): no battery icon'):
+            print('  [FAIL] battery icon shown above LOW_BATTERY_LEVEL')
+            ok = False
+        f.vdd_mv = f.div_mv = None
+        f.reset_battery_average()
 
     print('RESULT:', 'PASS' if ok else 'FAIL')
     return ok

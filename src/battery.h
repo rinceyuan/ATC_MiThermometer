@@ -24,4 +24,10 @@ extern u32 adc_average;
 
 u8 get_battery_level(u16 battery_mv);
 
+#if USE_BAT_LIION
+extern u8 bat_div_ok;
+void bat_div_detect(void);		// power-on: is the divider connected?
+u16 get_liion_mv(u16 vdd_mv);	// cell voltage through the divider, or vdd_mv without it
+#endif
+
 #endif // _BATTERY_H_
