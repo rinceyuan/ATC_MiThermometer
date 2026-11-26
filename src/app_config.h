@@ -3798,6 +3798,12 @@ GPIO_PD7 - LED to +Vbat
 #ifndef USE_MI_TIME_SAVE
 #define USE_MI_TIME_SAVE	USE_MI_AUTH // = 1 clock saved in flash 0x7A000..0x7BFFF every 5 min (as the original firmware)
 #endif
+#ifndef USE_MI_COMFORT // = 1 ebe0ccd7 comfort range + ebe0ccd4 reset data as the original LYWSD02MMC 2.0.1_0021 firmware
+#define USE_MI_COMFORT	(USE_MI_AUTH && (DEVICE_TYPE == DEVICE_LYWSD02MMC))
+#endif
+#if USE_MI_COMFORT && !(USE_MI_AUTH && (DEV_SERVICES & SERVICE_SCREEN))
+#error "USE_MI_COMFORT requires USE_MI_AUTH and SERVICE_SCREEN"
+#endif
 #if USE_MI_TIME_SAVE && !USE_MI_AUTH
 #error "USE_MI_TIME_SAVE requires USE_MI_AUTH"
 #endif

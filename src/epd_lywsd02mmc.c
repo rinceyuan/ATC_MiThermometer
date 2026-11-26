@@ -328,7 +328,14 @@ void show_smiley(u8 state){
 _attribute_ram_code_not_mi_
 u8 is_comfort(s16 t, u16 h) {
 	u8 ret = LCD_SYM_SMILEY_SAD;
+#if USE_MI_COMFORT
+	// as the original firmware (FUN_83a8): 0.1 C and 1 % resolution, limits included
+	t /= 10;
+	h /= 100;
+	if (t >= cmf.t[0] / 10 && t <= cmf.t[1] / 10 && h >= cmf.h[0] / 100 && h <= cmf.h[1] / 100)
+#else
 	if (t >= cmf.t[0] && t <= cmf.t[1] && h >= cmf.h[0] && h <= cmf.h[1])
+#endif
 		ret = LCD_SYM_SMILEY_HAPPY;
 	return ret;
 }

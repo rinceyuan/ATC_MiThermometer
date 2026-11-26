@@ -506,9 +506,9 @@ static const u8 mi_th_hntf_CharVal[19] = {
 	U16_LO(MiTH_HNTF_DP_H), U16_HI(MiTH_HNTF_DP_H),
 	MI_TH_UUID128(0xbc)
 };
-#define MI_TH_SRV_ATTS	22
+#define MI_TH_SRV_ATTS_HIST	22
 #else
-#define MI_TH_SRV_ATTS	13
+#define MI_TH_SRV_ATTS_HIST	13
 #endif
 static const u8 mi_th_disc_CharVal[19] = {
 	CHAR_PROP_WRITE,
@@ -517,6 +517,21 @@ static const u8 mi_th_disc_CharVal[19] = {
 };
 static const u8 mi_th_disc_val[4] = {0x0c, 0x0c, 0x0c, 0x08}; // as the original firmware
 static const u8 mi_th_disc_desc[] = {'D','i','s','c','o','n','n','e','c','t'};
+#if USE_MI_COMFORT
+static const u8 mi_th_reset_CharVal[19] = {
+	CHAR_PROP_WRITE,
+	U16_LO(MiTH_RESET_DP_H), U16_HI(MiTH_RESET_DP_H),
+	MI_TH_UUID128(0xd4)
+};
+static const u8 mi_th_cmf_CharVal[19] = {
+	CHAR_PROP_READ | CHAR_PROP_WRITE,
+	U16_LO(MiTH_CMF_DP_H), U16_HI(MiTH_CMF_DP_H),
+	MI_TH_UUID128(0xd7)
+};
+#define MI_TH_SRV_ATTS	(MI_TH_SRV_ATTS_HIST + 4)
+#else
+#define MI_TH_SRV_ATTS	MI_TH_SRV_ATTS_HIST
+#endif
 #elif (!defined(USE_MIHOME) || USE_MIHOME == 0)
 static const u8  my_MiName[] = {'M', 'i'};
 #endif
@@ -713,7 +728,11 @@ RAM attribute_t my_Attributes[] = {
 		{0,ATT_PERMISSIONS_RDWR,16,sizeof(wrk.utc_time_sec),(u8*)(&mi_th_time_CharVal[3]),(u8*)(&wrk.utc_time_sec), &mi_time_write, 0},
 #endif
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_tunit_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_tunit_CharVal), 0},
+#if USE_MI_COMFORT
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_tunit_val),(u8*)(&mi_th_tunit_CharVal[3]),(u8*)(&mi_tunit_val), &mi_tunit_write, &mi_tunit_read},
+#else
 		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_tunit_val),(u8*)(&mi_th_tunit_CharVal[3]),(u8*)(&mi_tunit_val), &mi_tunit_write, 0},
+#endif
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_data_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_data_CharVal), 0},
 		{0,ATT_PERMISSIONS_READ,16,sizeof(mi_th_val),(u8*)(&mi_th_data_CharVal[3]),(u8*)(mi_th_val), 0},
 		{0,ATT_PERMISSIONS_RDWR, 2,sizeof(mi_th_ccc),(u8*)(&clientCharacterCfgUUID),(u8*)(&mi_th_ccc), 0},
@@ -733,6 +752,12 @@ RAM attribute_t my_Attributes[] = {
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_disc_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_disc_CharVal), 0},
 		{0,ATT_PERMISSIONS_WRITE,16,sizeof(mi_th_disc_val),(u8*)(&mi_th_disc_CharVal[3]),(u8*)(mi_th_disc_val), &mi_disc_write, 0},
 		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_disc_desc),(u8*)(&userdesc_UUID),(u8*)(mi_th_disc_desc), 0},
+#if USE_MI_COMFORT
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_reset_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_reset_CharVal), 0},
+		{0,ATT_PERMISSIONS_WRITE,16,1,(u8*)(&mi_th_reset_CharVal[3]),(u8*)(mi_wo_val), &mi_reset_write, 0},
+		{0,ATT_PERMISSIONS_READ, 2,sizeof(mi_th_cmf_CharVal),(u8*)(&my_characterUUID),(u8*)(mi_th_cmf_CharVal), 0},
+		{0,ATT_PERMISSIONS_RDWR,16,sizeof(mi_cmf_val),(u8*)(&mi_th_cmf_CharVal[3]),(u8*)(mi_cmf_val), &mi_cmf_write, &mi_cmf_read},
+#endif
 #else
 	//Mi 0x95FE
 	{2,ATT_PERMISSIONS_READ, 2,2,(u8*)(&my_primaryServiceUUID),(u8*)(&mi_primary_service_uuid), 0},

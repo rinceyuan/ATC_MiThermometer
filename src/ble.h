@@ -206,6 +206,12 @@ typedef enum
 	MiTH_DISC_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Write
 	MiTH_DISC_DP_H,							//UUID: ebe0ccc8, VALUE: 0x88 - terminate connection
 	MiTH_DISC_DESC_H,						//UUID: 2901, 	VALUE: "Disconnect"
+#if USE_MI_COMFORT
+	MiTH_RESET_CD_H,						//UUID: 2803, 	VALUE:  			Prop: Write
+	MiTH_RESET_DP_H,						//UUID: ebe0ccd4, VALUE: 0x01 - clear history and settings
+	MiTH_CMF_CD_H,							//UUID: 2803, 	VALUE:  			Prop: Read | Write
+	MiTH_CMF_DP_H,							//UUID: ebe0ccd7, VALUE: comfort temperature / humidity range
+#endif
 #else
 	// Mi Advertising char
 	/**********************************************************************************************/

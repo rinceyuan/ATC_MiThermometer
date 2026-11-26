@@ -436,7 +436,12 @@ int mi_tunit_write(void * p) {
 	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
 	u32 len = req->l2cap - 3;
 	if (len) {
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+		// as the original 2.0.1_0021 firmware (FUN_a0e4): only 0x01 = F, other values = C (0xFF: C of the old LYWSD02)
+		u8 f = (req->dat[0] == 1) ? 1 : 0;
+#else
 		u8 f = req->dat[0] ? 1 : 0;
+#endif
 		mi_tunit_val = f;
 		if (cfg.flg.temp_F_or_C != f) {
 			cfg.flg.temp_F_or_C = f;
@@ -472,6 +477,89 @@ void mi_th_notify(void) {
 u8 mi_auth_logged(void) {
 	return mi_auth.step == MI_STEP_LOGGED;
 }
+
+#if USE_MI_COMFORT
+RAM u8 mi_cmf_val[6];
+#if (DEV_SERVICES & SERVICE_HISTORY)
+static void hist_stop(void);
+#endif
+
+/* ebe0ccbe read: the current unit (also when changed by TelinkMiFlasher), as the original firmware */
+int mi_tunit_read(void * p) {
+	(void) p;
+	mi_tunit_val = cfg.flg.temp_F_or_C;
+	return 0;
+}
+
+/* ebe0ccd7 comfort range as the original LYWSD02MMC 2.0.1_0021 firmware (FUN_9fdc, FUN_c400, FUN_9f9c):
+ * write: s16 Thigh, s16 Tlow (x0.1 C), u8 Hhigh, u8 Hlow (%);
+ * read: u16 Thigh, u16 Tlow (x0.01 C), u8 Hhigh, u8 Hlow (%);
+ * accepted: Thigh >= Tlow, Hhigh >= Hlow, Tlow >= -10 C, Thigh <= 100 C, Hhigh <= 99 %.
+ * The original firmware takes both humidity limits from byte 4 (Hlow is lost); here byte 5 is Hlow
+ * (a 5-byte write sets both, as the original). Stored in cmf (x0.01, the comfort smiley). */
+int mi_cmf_write(void * p) {
+	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
+	u32 len = req->l2cap - 3;
+	if (len < 5 || len > 6)
+		return 0;
+	s32 th = (s16)(req->dat[0] | (req->dat[1] << 8)) * 10;
+	s32 tl = (s16)(req->dat[2] | (req->dat[3] << 8)) * 10;
+	u32 hh = req->dat[4] * 100;
+	u32 hl = (len == 6) ? req->dat[5] * 100 : hh;
+	if (th < tl || hh < hl || tl < -1000 || th > 10000 || hh > 9900)
+		return 0;
+	cmf.t[0] = (s16)tl;
+	cmf.t[1] = (s16)th;
+	cmf.h[0] = (u16)hl;
+	cmf.h[1] = (u16)hh;
+	flash_write_cfg(&cmf, EEP_ID_CMF, sizeof(cmf));
+	if (!cfg.flg.comfort_smiley) { // the original firmware always shows the comfort face
+		cfg.flg.comfort_smiley = 1;
+		flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
+	}
+	SET_LCD_UPDATE();
+	return 0;
+}
+
+int mi_cmf_read(void * p) {
+	(void) p;
+	mi_cmf_val[0] = (u8)cmf.t[1];
+	mi_cmf_val[1] = (u8)(cmf.t[1] >> 8);
+	mi_cmf_val[2] = (u8)cmf.t[0];
+	mi_cmf_val[3] = (u8)(cmf.t[0] >> 8);
+	mi_cmf_val[4] = (u8)(cmf.h[1] / 100);
+	mi_cmf_val[5] = (u8)(cmf.h[0] / 100);
+	return 0;
+}
+
+/* ebe0ccd4 "reset data" as the original firmware (FUN_a028): 0x01 from a logged-in MiHome session
+ * clears the measurement history and resets the settings of the original firmware (FUN_c35c
+ * clear_syspara): C, 24h, comfort range, timezone UTC+8 (the UTC clock keeps running).
+ * The Mi key records (binding) are kept; the original firmware reboots afterwards, not needed here. */
+int mi_reset_write(void * p) {
+	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
+	if (req->l2cap <= 3 || req->dat[0] != 1 || !mi_auth_logged())
+		return 0;
+#if (DEV_SERVICES & SERVICE_HISTORY)
+	hist_stop();
+	clear_memo();
+#endif
+	cfg.flg.temp_F_or_C = 0;
+	cfg.flg.time_am_pm = 0;
+	cfg.flg.comfort_smiley = 1;
+	flash_write_cfg(&cfg, EEP_ID_CFG, sizeof(cfg));
+	memcpy(&cmf, &def_cmf, sizeof(cmf));
+	flash_write_cfg(&cmf, EEP_ID_CMF, sizeof(cmf));
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+	mi_tz[0] = 8;
+	mi_tz[1] = 0;
+	flash_write_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz));
+	rtc_set_utime(wrk.utc_time_sec + mi_tz_offset_sec());
+#endif
+	SET_LCD_UPDATE();
+	return 0;
+}
+#endif // USE_MI_COMFORT
 
 #if (DEV_SERVICES & SERVICE_HISTORY)
 /* ---------------------------------------------------------------------------------------------

@@ -345,6 +345,7 @@ typedef struct _comfort_t {
 	u16 h[2];
 }scomfort_t, * pcomfort_t;
 extern scomfort_t cmf;
+extern const scomfort_t def_cmf;
 
 #if (DEV_SERVICES & SERVICE_BINDKEY)
 extern u8 bindkey[16];

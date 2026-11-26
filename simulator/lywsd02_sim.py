@@ -55,10 +55,12 @@ F3_SHOW_DOW = 0x80
 
 ENTRIES = ['lcd', 'update_lcd', 'WakeupLowPowerCb', 'check_battery', 'get_battery_level',
            'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon',
-           'mi_time_write', 'mi_time_read']
+           'mi_time_write', 'mi_time_read', 'mi_tunit_write', 'mi_tunit_read',
+           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write']
 STUBS = ['init_lcd', 'send_i2c_byte', 'send_i2c_buf', 'read_sensor_cb', 'get_adc_mv',
          'low_vbat', 'go_sleep', 'write_memo', 'bls_pm_setAppWakeupLowPower',
-         '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set']
+         '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set',
+         'mi_auth_logged', 'hist_stop', 'clear_memo']
 SCRATCH = 0x84e000  # SRAM buffer for ATT write packets
 
 BINDKEY = bytes(range(0x10, 0x20))
@@ -132,6 +134,8 @@ class LYWSD02Firmware:
         self.low_vbat = False
         self.beacon = {}
         self.mi_time_sets = []
+        self.logged = True  # MiHome login state (mi_auth_logged)
+        self.memo_cleared = 0
 
         # Power-on defaults
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
@@ -187,6 +191,11 @@ class LYWSD02Firmware:
             self._ret(0)
         elif name == 'mi_time_set':
             self.mi_time_sets.append(r0)
+            self._ret(0)
+        elif name == 'mi_auth_logged':
+            self._ret(1 if self.logged else 0)
+        elif name == 'clear_memo':
+            self.memo_cleared += 1
             self._ret(0)
         elif name in ('__udivsi3', '__umodsi3'):
             q, m = divmod(r0, r1) if r1 else (0xffffffff, r0)
@@ -293,15 +302,28 @@ class LYWSD02Firmware:
             self.write8('stage_lcd', 0, 0)
         return self.display()
 
-    def mi_time_write(self, data):
-        """ATT write to ebe0ccb7; returns the UTC values passed to mi_time_set()."""
-        pkt = bytearray(13 + len(data))  # rf_packet_att_data_t: l2cap at 6, dat at 13
+    def att_write(self, fn, data):
+        """Call an ATT write callback with an rf_packet_att_data_t (l2cap at 6, dat at 13)."""
+        pkt = bytearray(13 + len(data))
         struct.pack_into('<H', pkt, 6, len(data) + 3)
         pkt[13:] = data
         self.uc.mem_write(SCRATCH, bytes(pkt))
+        return self.call(fn, SCRATCH)
+
+    def mi_time_write(self, data):
+        """ATT write to ebe0ccb7; returns the UTC values passed to mi_time_set()."""
         self.mi_time_sets = []
-        self.call('mi_time_write', SCRATCH)
+        self.att_write('mi_time_write', data)
         return self.mi_time_sets
+
+    def cmf(self):
+        return struct.unpack('<hhHH', self.read('cmf', 0, 8))  # Tlow, Thigh, Hlow, Hhigh (x0.01)
+
+    def set_logged(self, on):
+        """MiHome login state: mi_auth.step = MI_STEP_LOGGED (5); mi_auth_logged() may be inlined."""
+        self.logged = on
+        if 'mi_auth' in self.sym:
+            self.write8('mi_auth', 0, 5 if on else 0)
 
     def mi_time_read(self):
         self.call('mi_time_read', 0)
@@ -531,6 +553,62 @@ def selftest(elf, binf):
                    for k, (val, _cnt, _fc, pid) in f.beacon.items()}
             print('  MiBeacon (decrypted):', dec)
             ok &= abs(f.beacon[0x4c01][0] - 25.2) < 0.01 and f.beacon[0x4c02][0] == 46 and f.beacon[0x4c01][3] == 0x2542
+
+    def check(title, good, info=''):
+        nonlocal ok
+        ok &= bool(good)
+        print(f'  [{"OK" if good else "FAIL"}] {title:<40} {info}')
+
+    if 'mi_cmf_write' in f.sym:
+        # ebe0ccbe / ebe0ccd7 / ebe0ccd4 as the original 2.0.1_0021 firmware
+        def tunit(v):
+            f.att_write('mi_tunit_write', bytes([v]))
+            f.call('mi_tunit_read', 0)
+            return f.read8('mi_tunit_val'), bool(f.read8('cfg', CFG_FLG) & F_FAHR)
+        check('unit 0x01 -> F', tunit(1) == (1, True))
+        check('unit 0xFF -> C (old LYWSD02 encoding)', tunit(0xff) == (0, False))
+        check('unit 0x00 -> C', tunit(0) == (0, False))
+        f.set_flag(0, F_FAHR, True)
+        f.call('mi_tunit_read', 0)
+        check('unit read follows cfg (TelinkMiFlasher)', f.read8('mi_tunit_val') == 1)
+        f.set_flag(0, F_FAHR, False)
+
+        def cmf_read():
+            f.call('mi_cmf_read', 0)
+            return f.read('mi_cmf_val', 0, 6)
+        r = cmf_read()
+        check('comfort default 19-27 C, 20-85 %', r == struct.pack('<HHBB', 2700, 1900, 85, 20), r.hex(' '))
+        f.att_write('mi_cmf_write', struct.pack('<hhBB', 260, 200, 70, 30))
+        r = cmf_read()
+        check('comfort write 20.0-26.0 C, 30-70 %', f.cmf() == (2000, 2600, 3000, 7000)
+              and r == struct.pack('<HHBB', 2600, 2000, 70, 30), r.hex(' '))
+        for title, data in (('comfort invalid: Thigh < Tlow', struct.pack('<hhBB', 200, 260, 70, 30)),
+                            ('comfort invalid: Hhigh < Hlow', struct.pack('<hhBB', 260, 200, 30, 70)),
+                            ('comfort invalid: Tlow < -10 C', struct.pack('<hhBB', 260, -101, 70, 30)),
+                            ('comfort invalid: Hhigh > 99 %', struct.pack('<hhBB', 260, 200, 100, 30))):
+            f.att_write('mi_cmf_write', data)
+            check(title + ' -> ignored', f.cmf() == (2000, 2600, 3000, 7000))
+        f.set_inputs(temp_c=26.04, humi=46.2)
+        show('comfort 26.04 C (shown 26.0) <= 26.0', expect=['T=26.0°C', '(^-^)'])
+        f.set_inputs(temp_c=26.1)
+        show('comfort 26.1 C > 26.0 -> sad', expect=['T=26.1°C', '(-^-)'])
+        f.set_inputs(temp_c=25.19, humi=46.2)
+
+        f.write('mi_tz', 0, struct.pack('<bb', -5, 0))
+        f.set_flag(0, F_FAHR, True)
+        f.set_flag(0, F_AM_PM, True)
+        f.set_logged(False)
+        f.att_write('mi_reset_write', b'\x01')
+        check('reset data not logged in -> ignored', f.memo_cleared == 0 and f.cmf() == (2000, 2600, 3000, 7000))
+        f.set_logged(True)
+        f.att_write('mi_reset_write', b'\x02')
+        check('reset data 0x02 -> ignored', f.memo_cleared == 0)
+        f.att_write('mi_reset_write', b'\x01')
+        flg = f.read8('cfg', CFG_FLG)
+        check('reset data 0x01: history, C, 24h, comfort, UTC+8',
+              f.memo_cleared == 1 and f.cmf() == (1900, 2700, 2000, 8500) and not flg & (F_FAHR | F_AM_PM)
+              and flg & F_COMFORT and struct.unpack('<bb', f.read('mi_tz', 0, 2)) == (8, 0))
+
     print('RESULT:', 'PASS' if ok else 'FAIL')
     return ok
 

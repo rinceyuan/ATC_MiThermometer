@@ -39,6 +39,13 @@ int mi_time_read(void * p);		// ebe0ccb7 read (utc + tz + 12/24h mode)
 s32 mi_tz_offset_sec(void);
 #endif
 int mi_tunit_write(void * p);	// ebe0ccbe write
+#if USE_MI_COMFORT
+extern u8 mi_cmf_val[6];
+int mi_tunit_read(void * p);	// ebe0ccbe read
+int mi_cmf_write(void * p);		// ebe0ccd7 write: comfort range
+int mi_cmf_read(void * p);		// ebe0ccd7 read
+int mi_reset_write(void * p);	// ebe0ccd4 write: 0x01 - clear history and settings
+#endif
 int mi_disc_write(void * p);	// ebe0ccc8 write: 0x88 - terminate connection
 void mi_time_set(u32 t);		// set clock (UTC); clears the logger on a step back > 1 hour
 #if USE_MI_TIME_SAVE

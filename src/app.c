@@ -75,8 +75,13 @@ RAM u8 bindkey[16];
 #if (DEV_SERVICES & SERVICE_SCREEN)
 RAM scomfort_t cmf;
 const scomfort_t def_cmf = {
+#if USE_MI_COMFORT // as the original LYWSD02MMC firmware (FUN_c458)
+		.t = {1900,2700}, // x0.01 C
+		.h = {2000,8500}  // x0.01 %
+#else
 		.t = {2100,2600}, // x0.01 C
 		.h = {3000,6000}  // x0.01 %
+#endif
 };
 #endif
 
@@ -295,6 +300,9 @@ const cfg_t def_cfg = {
 		.flg2.adv_flags = true,
 #if USE_MI_AUTH
 		.flg2.adv_crypto = true, // MiHome: encrypted MiBeacon, bindkey from the Mi key record
+#endif
+#if USE_MI_COMFORT
+		.flg.comfort_smiley = true, // the original firmware shows the comfort face (range ebe0ccd7)
 #endif
 		.advertising_interval = 60, // multiply by 62.5 ms = 3.750 sec
 		.measure_interval = 4, // * advertising_interval = 15 sec
