@@ -64,6 +64,22 @@ s32 mi_tz_offset_sec(void) {
 	return ((s32)mi_tz[0] * 60 + (s32)mi_tz[1] * 15) * 60;
 }
 
+/* hour -24..24, quarter -4..4 -> as the original firmware stores it: sign, hours (mod 24) and
+ * quarters of the absolute offset (+5 h -2 q -> +4:30, +24 h -> 0); returns 0 if out of range */
+static int mi_tz_norm(s8 *tz) {
+	if (tz[0] < -24 || tz[0] > 24 || tz[1] < -4 || tz[1] > 4)
+		return 0;
+	s32 m = (s32)tz[0] * 60 + (s32)tz[1] * 15;
+	u32 a = (m < 0) ? -m : m;
+	tz[0] = (s8)((a / 60) % 24);
+	tz[1] = (s8)((a % 60) / 15);
+	if (m < 0) {
+		tz[0] = -tz[0];
+		tz[1] = -tz[1];
+	}
+	return 1;
+}
+
 int mi_time_read(void * p) {
 	(void) p;
 	memcpy(mi_time_val, &wrk.utc_time_sec, 4);
@@ -404,22 +420,14 @@ int mi_time_write(void * p) {
 	if (len > 7)
 		return 0;
 	if (len >= 5) {
-		s8 tz_h = (s8)req->dat[4];
-		s8 tz_q = (len == 6) ? (s8)req->dat[5] : 0;
-		if (tz_h < -24 || tz_h > 24 || tz_q < -4 || tz_q > 4)
+		s8 tz[2];
+		tz[0] = (s8)req->dat[4];
+		tz[1] = (len == 6) ? (s8)req->dat[5] : 0;
+		if (!mi_tz_norm(tz))
 			return 0;
-		// stored as the original firmware: sign, hours (mod 24) and quarters of the absolute offset
-		s32 m = (s32)tz_h * 60 + (s32)tz_q * 15;
-		u32 a = (m < 0) ? -m : m;
-		tz_h = (s8)((a / 60) % 24);
-		tz_q = (s8)((a % 60) / 15);
-		if (m < 0) {
-			tz_h = -tz_h;
-			tz_q = -tz_q;
-		}
-		if (mi_tz[0] != tz_h || mi_tz[1] != tz_q) {
-			mi_tz[0] = tz_h;
-			mi_tz[1] = tz_q;
+		if (mi_tz[0] != tz[0] || mi_tz[1] != tz[1]) {
+			mi_tz[0] = tz[0];
+			mi_tz[1] = tz[1];
 			flash_write_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz));
 		}
 	}
@@ -880,8 +888,8 @@ static int mi_tlog_write(u32 t) {
  *  l > t + 1 h: l (area left by the original firmware or not written for a long time). */
 void mi_time_load(void) {
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
-	if (flash_read_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz)) != sizeof(mi_tz)
-		|| mi_tz[0] < -24 || mi_tz[0] > 24 || mi_tz[1] < -4 || mi_tz[1] > 4) {
+	// normalized as written (also values saved by earlier builds, e.g. +24 h -> 0)
+	if (flash_read_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz)) != sizeof(mi_tz) || !mi_tz_norm(mi_tz)) {
 		mi_tz[0] = 8; // default UTC+8
 		mi_tz[1] = 0;
 	}

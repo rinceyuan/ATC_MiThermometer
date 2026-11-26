@@ -301,9 +301,6 @@ const cfg_t def_cfg = {
 #if USE_MI_AUTH
 		.flg2.adv_crypto = true, // MiHome: encrypted MiBeacon, bindkey from the Mi key record
 #endif
-#if USE_MI_COMFORT
-		.flg.comfort_smiley = true, // the original firmware shows the comfort face (range ebe0ccd7)
-#endif
 		.advertising_interval = 60, // multiply by 62.5 ms = 3.750 sec
 		.measure_interval = 4, // * advertising_interval = 15 sec
 		.min_step_time_update_lcd = 49, //x0.05 sec,   2.45 sec
