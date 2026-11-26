@@ -17,7 +17,11 @@
 
 #define MEMO_SEC_ID		0x55AAC0DE // sector head
 #define FLASH_ADDR_START_MEMO	0x40000
-#define FLASH_ADDR_END_MEMO		0x74000 // 49 sectors
+#if USE_MI_HIST_MAXMIN
+#define FLASH_ADDR_END_MEMO		0x72000 // 50 sectors; 0x72000..0x73FFF: MiHome hourly max/min (mi_auth.c)
+#else
+#define FLASH_ADDR_END_MEMO		0x74000 // 52 sectors
+#endif
 
 #define FLASH1M_ADDR_START_MEMO	0x80000
 #define FLASH1M_ADDR_END_MEMO	0x100000 // 128 sectors

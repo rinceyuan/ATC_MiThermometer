@@ -42,6 +42,18 @@ static void sensor_calk_th(s32 t, u32 h) {
 	measured_data.humi = ((u32)(h * sensor_cfg.coef.val2_k) >> 16) + sensor_cfg.coef.val2_z; // x 0.01 %	   // 10000 -0
 	if (measured_data.humi < 0) measured_data.humi = 0;
 	else if (measured_data.humi > 9999) measured_data.humi = 9999;
+#if USE_STOCK_HUMI_CORR
+	{	// as the original firmware (x 0.01 %): continuous, result 2.00..99.00 %
+		s32 rh = measured_data.humi;
+		if (rh < 200) rh = 200;
+		else if (rh < 2000) rh = (rh * 20 - 400) / 18;
+		else if (rh < 8000) rh += 200;
+		else if (rh < 9636) rh = (rh * 23 - 20000) / 20;
+		else rh += 500;
+		if (rh > 9900) rh = 9900;
+		measured_data.humi = rh;
+	}
+#endif
 	measured_data.count++;
 }
 
@@ -68,6 +80,7 @@ static int read_sensor_sht30_shtc3_sht4x(void);
 #define SHTC3_WAKEUP_us			240    // time us
 #define SHTC3_POWER_TIMEOUT_us	240		// time us, 180..240 us
 #define SHTC3_SOFT_RESET_us		240		// time us, 180..240 us
+#define GXHTC3_WAKEUP_MAX_us	500		// GXHTC3: wake-up / power-up / soft reset 180..500 us
 #define SHTC3_HI_MEASURE_us		11000	// time us, 10.8..12.1 ms
 #define SHTC3_LO_MEASURE_us		750		// time us, 0.7..0.8 ms ?
 
@@ -102,6 +115,14 @@ static int start_measure_shtc3(void) {
 	}
 #else
 	ret = send_i2c_word(sensor_cfg.i2c_addr, SHTC3_MEASURE);
+#if USE_SENSOR_GXHTC3
+	if (ret) {
+		// GXHTC3 not awake yet (NAK): up to 500 us after the wake-up command
+		send_i2c_word(sensor_cfg.i2c_addr, SHTC3_WAKEUP);
+		sleep_us(GXHTC3_WAKEUP_MAX_us);
+		ret = send_i2c_word(sensor_cfg.i2c_addr, SHTC3_MEASURE);
+	}
+#endif
 #endif
 	return ret;
 }
@@ -295,7 +316,14 @@ static int read_sensor_sht30_shtc3_sht4x(void) {
 				sensor_calk_th(_temp, _humi);
 #if USE_SENSOR_SHTC3
 				if (sensor_cfg.sensor_type == ID_SENSOR_SHTC3) {
+#if USE_SENSOR_GXHTC3
+					// the data is valid (CRC ok): a NAK of the sleep command must not discard it
+					if (send_i2c_word(sensor_cfg.i2c_addr, SHTC3_GO_SLEEP))
+						send_i2c_word(sensor_cfg.i2c_addr, SHTC3_GO_SLEEP); // Sleep command of the sensor
+					ret = 1;
+#else
 					ret = send_i2c_word(sensor_cfg.i2c_addr, SHTC3_GO_SLEEP) == 0; // Sleep command of the sensor
+#endif
 				} else
 #endif
 #if !SENSOR_SLEEP_MEASURE
@@ -620,12 +648,23 @@ static int check_sensor(void) {
 #if USE_SENSOR_SHTC3
 	// Wake SHTC3 unconditionally before scanning: after an OTA soft-reboot a sleeping SHTC3 NAKs bare address scans
 	send_i2c_word(SHTC3_I2C_ADDR << 1, SHTC3_WAKEUP);
+#if USE_SENSOR_GXHTC3
+	sleep_us(GXHTC3_WAKEUP_MAX_us);	// 500 us
+#else
 	sleep_us(SHTC3_WAKEUP_us);	// 240 us
+#endif
 	// Scan I2C addr 0x70
 	if ((sensor_cfg.i2c_addr = (u8) scan_i2c_addr(SHTC3_I2C_ADDR << 1)) != 0) {
 		// SHTC3
 		if(!send_i2c_word(SHTC3_I2C_ADDR << 1, SHTC3_WAKEUP)) { //	Wake-up command of the SHTC3 sensor
+#if USE_SENSOR_GXHTC3
+			sleep_us(GXHTC3_WAKEUP_MAX_us);	// 500 us
+			// as the original firmware: soft reset after the wake-up (a sensor left in a measurement / read state)
+			if(!send_i2c_word(sensor_cfg.i2c_addr, SHTC3_SOFT_RESET))
+				sleep_us(GXHTC3_WAKEUP_MAX_us);	// 500 us
+#else
 			sleep_us(SHTC3_WAKEUP_us);	// 240 us
+#endif
 			// cfg.hw_cfg.shtc3 = 1; // = 1 - sensor SHTC3
 			if(!send_i2c_word(sensor_cfg.i2c_addr, SHTC3_GET_ID) // Get ID
 			&& !read_i2c_buf(sensor_cfg.i2c_addr, buf, 3)

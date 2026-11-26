@@ -70,6 +70,11 @@ int mi_hist_read_read(void * p);
 int mi_hist_ccc_write(void * p);
 u8 mi_hist_busy(void);
 void mi_hist_task(void);		// main loop: send next hourly record
+#if USE_MI_HIST_MAXMIN
+void mi_hist_init(void);		// power-on: hourly max/min ring (0x72000)
+void mi_hist_measure(void);		// each measurement: max/min of the current hour
+void mi_hist_clear(void);		// clear_memo(): erase the ring
+#endif
 #endif
 
 void mi_auth_reset(void);		// on connect / disconnect

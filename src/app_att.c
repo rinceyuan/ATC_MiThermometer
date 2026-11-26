@@ -339,7 +339,7 @@ static const u8 my_ManStr[] = {"Sonoff"};
 
 #elif DEVICE_TYPE == DEVICE_LYWSD02MMC
 
-static const u8 my_ModelStr[] = {"LYWSDO2MMC"};
+static const u8 my_ModelStr[] = {"LYWSD02MMC"};
 static const u8 my_HardStr[5] = {"F4_QT"};
 RAM u8 my_SerialStr[20]; // = {"F470003441FFFFFFFF"}
 static const u8 my_SoftStr[] = {'V','0'+(VERSION>>4),'.','0'+(VERSION&0x0f)}; // "0026"

@@ -570,12 +570,328 @@ int mi_reset_write(void * p) {
 
 #if (DEV_SERVICES & SERVICE_HISTORY)
 /* ---------------------------------------------------------------------------------------------
- *  History (ebe0ccb9..ebe0ccbc) as the original firmware, served from the pvvx logger:
+ *  History (ebe0ccb9..ebe0ccbc) as the original firmware:
  *  index = hour number (utc / 3600); record = [u32 index][u32 time = end of hour]
- *  [s16 Tmax x0.1 C][u8 Hmax %][s16 Tmin x0.1 C][u8 Hmin %], max/min of the logger records
- *  (averages) whose averaging window is centred in that hour. Only complete hours are reported.
+ *  [s16 Tmax x0.1 C][u8 Hmax %][s16 Tmin x0.1 C][u8 Hmin %]. Only complete hours are reported.
+ *  USE_MI_HIST_MAXMIN: max/min of all measurements of the hour (own flash ring);
+ *  otherwise max/min of the pvvx logger records (averages) whose averaging window is centred
+ *  in that hour.
  * -------------------------------------------------------------------------------------------*/
 #define MI_HIST_TIME_MIN	MI_TIME_MIN // older time stamps = clock was not set
+
+RAM u8 mi_hist_count_val[8];	// ebe0ccb9: u32 last index, u32 count
+RAM u8 mi_hist_index_val[4];	// ebe0ccba: u32 index
+RAM u8 mi_hist_read_val[14];	// ebe0ccbb: newest record
+RAM u16 mi_hist_ccc;
+
+static void put32(u8 *p, u32 v) {
+	p[0] = (u8)v; p[1] = (u8)(v >> 8); p[2] = (u8)(v >> 16); p[3] = (u8)(v >> 24);
+}
+
+#if USE_MI_HIST_MAXMIN
+/* ---------------------------------------------------------------------------------------------
+ *  USE_MI_HIST_MAXMIN: max/min of all measurements of each hour, as the original firmware.
+ *  The current hour is collected in RAM; when the hour changes it is appended to a ring of two
+ *  flash sectors (0x72000..0x73FFF, 341 hours each: 14..28 days). Records are in time order:
+ *  the older sector first, then the current one; the older sector is erased when the current
+ *  one is full. A slot that is written but not valid (power lost while writing) is skipped.
+ * -------------------------------------------------------------------------------------------*/
+#define HR_START	FLASH_ADDR_END_MEMO					// 0x72000
+#define HR_END		(HR_START + 2 * FLASH_SECTOR_SIZE)	// 0x74000
+#define HR_SEC_RECS	(FLASH_SECTOR_SIZE / sizeof(hr_rec_t))	// 341
+#define HR_MARK		0x5AA5
+
+typedef struct {
+	u32 hour;	// utc / 3600
+	s16 tmax;	// x0.1 C
+	s16 tmin;	// x0.1 C
+	u8 hmax;	// %
+	u8 hmin;	// %
+	u16 mark;	// HR_MARK: valid record
+} hr_rec_t;		// 12 bytes
+
+typedef struct {
+	u32 cur_sec;	// current sector (being written)
+	u32 wr;			// next free slot in cur_sec
+	u32 old_n;		// slots used in the other (older) sector
+	u32 last_wr;	// hour of the newest record in the ring
+	hr_rec_t acc;	// current hour (mark = 0: no data yet)
+	// MiHome transfer
+	u32 first;		// first hour index
+	u32 last;		// last hour index
+	u32 count;		// last - first + 1, 0 = no data
+	u32 cur;		// next hour index to send
+	u32 pos;		// next record (0 = oldest) to send
+	u8 active;		// transfer started by index write
+} mi_hist_t;
+RAM mi_hist_t mi_hist;
+
+static u32 hr_other(u32 sec) {
+	return (sec == HR_START) ? HR_START + FLASH_SECTOR_SIZE : HR_START;
+}
+
+static u32 hr_total(void) {
+	return mi_hist.old_n + (mi_hist.wr - mi_hist.cur_sec) / sizeof(hr_rec_t);
+}
+
+/* record i (0 = oldest); returns 1 if valid */
+static int hr_get(u32 i, hr_rec_t *p) {
+	u32 faddr;
+	if (i < mi_hist.old_n)
+		faddr = hr_other(mi_hist.cur_sec) + i * sizeof(hr_rec_t);
+	else
+		faddr = mi_hist.cur_sec + (i - mi_hist.old_n) * sizeof(hr_rec_t);
+	flash_read_page(FLASH_BASE_ADDR + faddr, sizeof(hr_rec_t), (u8 *)p);
+	return p->mark == HR_MARK && p->hour >= MI_HIST_TIME_MIN / 3600 && p->hour < 0x80000000u / 3600;
+}
+
+/* used slots of a sector (up to the first erased slot), newest valid hour in *plast;
+ * returns -1 if the sector holds other data (the logger used it before) */
+static int hr_scan_sec(u32 sec, u32 *plast) {
+	hr_rec_t r;
+	u32 n;
+	u8 *b = (u8 *)&r;
+	*plast = 0;
+	for (n = 0; n < HR_SEC_RECS; n++) {
+		flash_read_page(FLASH_BASE_ADDR + sec + n * sizeof(hr_rec_t), sizeof(r), b);
+		if (r.hour == 0xffffffff && r.mark == 0xffff && r.tmax == -1 && r.tmin == -1)
+			break; // erased
+		if (r.mark == HR_MARK)
+			*plast = r.hour;
+		else if (n == 0)
+			return -1;
+	}
+	return n;
+}
+
+static void hr_erase(u32 sec) {
+	flash_erase_sector(FLASH_BASE_ADDR + sec);
+}
+
+/* power-on: find the current sector and the write position */
+void mi_hist_init(void) {
+	u32 la, lb;
+	int na, nb;
+	memset(&mi_hist, 0, sizeof(mi_hist));
+	na = hr_scan_sec(HR_START, &la);
+	if (na < 0) {
+		hr_erase(HR_START);
+		na = 0;
+	}
+	nb = hr_scan_sec(HR_START + FLASH_SECTOR_SIZE, &lb);
+	if (nb < 0) {
+		hr_erase(HR_START + FLASH_SECTOR_SIZE);
+		nb = 0;
+	}
+	if (na == HR_SEC_RECS && nb == HR_SEC_RECS) { // both full (power lost before the erase)
+		if (la < lb) {
+			hr_erase(HR_START);
+			na = 0;
+		} else {
+			hr_erase(HR_START + FLASH_SECTOR_SIZE);
+			nb = 0;
+		}
+	}
+	// current = the one that is not full and has the newer records (or A if both are empty)
+	if (na == HR_SEC_RECS || (nb != HR_SEC_RECS && nb && lb > la)) {
+		mi_hist.cur_sec = HR_START + FLASH_SECTOR_SIZE;
+		mi_hist.wr = mi_hist.cur_sec + nb * sizeof(hr_rec_t);
+		mi_hist.old_n = na;
+		mi_hist.last_wr = (nb && lb) ? lb : la;
+	} else {
+		mi_hist.cur_sec = HR_START;
+		mi_hist.wr = HR_START + na * sizeof(hr_rec_t);
+		mi_hist.old_n = nb;
+		mi_hist.last_wr = (na && la) ? la : lb;
+	}
+}
+
+static void hist_stop(void);
+
+static void hr_append(hr_rec_t *p) {
+	if (mi_hist.wr + sizeof(hr_rec_t) > mi_hist.cur_sec + FLASH_SECTOR_SIZE) {
+		// current sector full: it becomes the older one, the oldest sector is erased
+		hist_stop(); // a running MiHome transfer may read the erased sector
+		mi_hist.old_n = (mi_hist.wr - mi_hist.cur_sec) / sizeof(hr_rec_t);
+		mi_hist.cur_sec = hr_other(mi_hist.cur_sec);
+		hr_erase(mi_hist.cur_sec);
+		mi_hist.wr = mi_hist.cur_sec;
+	}
+	flash_write_page(FLASH_BASE_ADDR + mi_hist.wr, sizeof(hr_rec_t), (u8 *)p);
+	mi_hist.wr += sizeof(hr_rec_t);
+	mi_hist.last_wr = p->hour;
+}
+
+/* clear_memo(): clock set back, MiHome "reset data", TelinkMiFlasher "clear log" */
+void mi_hist_clear(void) {
+	hist_stop();
+	hr_erase(HR_START);
+	hr_erase(HR_START + FLASH_SECTOR_SIZE);
+	mi_hist.cur_sec = HR_START;
+	mi_hist.wr = HR_START;
+	mi_hist.old_n = 0;
+	mi_hist.last_wr = 0;
+	mi_hist.acc.mark = 0;
+}
+
+/* each measurement: max/min of the current hour; a new hour appends the previous one */
+void mi_hist_measure(void) {
+	u32 t = wrk.utc_time_sec, h;
+	s16 tv = measured_data.temp_x01;	// 0.1 C as shown
+	u8 hv = measured_data.humi_x1;		// % as shown
+	if (t < MI_HIST_TIME_MIN)
+		return; // clock not set
+	h = t / 3600;
+	if (mi_hist.acc.mark) {
+		if (h < mi_hist.acc.hour)
+			return; // stepped back a little (minute resync from the RTC): ignore the sample
+		if (h > mi_hist.acc.hour) {
+			if (mi_hist.acc.hour > mi_hist.last_wr)
+				hr_append(&mi_hist.acc);
+			mi_hist.acc.mark = 0;
+		}
+	}
+	if (!mi_hist.acc.mark) {
+		mi_hist.acc.hour = h;
+		mi_hist.acc.tmax = mi_hist.acc.tmin = tv;
+		mi_hist.acc.hmax = mi_hist.acc.hmin = hv;
+		mi_hist.acc.mark = HR_MARK;
+	} else {
+		if (tv > mi_hist.acc.tmax) mi_hist.acc.tmax = tv;
+		if (tv < mi_hist.acc.tmin) mi_hist.acc.tmin = tv;
+		if (hv > mi_hist.acc.hmax) mi_hist.acc.hmax = hv;
+		if (hv < mi_hist.acc.hmin) mi_hist.acc.hmin = hv;
+	}
+}
+
+static void hr_out(hr_rec_t *r, u8 *out) {
+	put32(&out[0], r->hour);
+	put32(&out[4], (r->hour + 1) * 3600);
+	out[8] = (u8)r->tmax; out[9] = (u8)(r->tmax >> 8);
+	out[10] = r->hmax;
+	out[11] = (u8)r->tmin; out[12] = (u8)(r->tmin >> 8);
+	out[13] = r->hmin;
+}
+
+/* first / last hour of the ring (complete hours only; the current hour is in RAM) */
+static void hist_scan(void) {
+	hr_rec_t r;
+	u32 i, n = hr_total();
+	mi_hist.first = 0;
+	mi_hist.last = 0;
+	mi_hist.count = 0;
+	for (i = 0; i < n; i++)
+		if (hr_get(i, &r)) {
+			mi_hist.first = r.hour;
+			break;
+		}
+	for (i = n; i > 0; i--)
+		if (hr_get(i - 1, &r)) {
+			mi_hist.last = r.hour;
+			break;
+		}
+	if (mi_hist.first && mi_hist.last >= mi_hist.first)
+		mi_hist.count = mi_hist.last - mi_hist.first + 1;
+	else
+		mi_hist.last = 0;
+	put32(&mi_hist_count_val[0], mi_hist.last);
+	put32(&mi_hist_count_val[4], mi_hist.count);
+}
+
+static void hist_stop(void) {
+	if (mi_hist.active)
+		bls_pm_setManualLatency(cfg.connect_latency);
+	mi_hist.active = 0;
+	mi_hist.cur = 0;
+}
+
+int mi_hist_count_read(void * p) {
+	(void) p;
+	hist_scan();
+	return 0;
+}
+
+int mi_hist_index_write(void * p) {
+	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
+	hr_rec_t r;
+	u32 len = req->l2cap - 3, idx, i, n;
+	if (len >= 4) {
+		idx = req->dat[0] | (req->dat[1] << 8) | (req->dat[2] << 16) | ((u32)req->dat[3] << 24);
+		hist_scan();
+		if (!mi_hist.count || idx > mi_hist.last) {
+			hist_stop();
+		} else {
+			if (idx < mi_hist.first)
+				idx = mi_hist.first;
+			// first record with hour >= idx
+			n = hr_total();
+			for (i = 0; i < n; i++)
+				if (hr_get(i, &r) && r.hour >= idx)
+					break;
+			mi_hist.pos = i;
+			mi_hist.cur = idx;
+			if (!mi_hist.active)
+				bls_pm_setManualLatency(0);
+			mi_hist.active = 1;
+		}
+		put32(mi_hist_index_val, mi_hist.cur);
+	}
+	return 0;
+}
+
+int mi_hist_index_read(void * p) {
+	(void) p;
+	put32(mi_hist_index_val, mi_hist.cur);
+	return 0;
+}
+
+int mi_hist_read_read(void * p) {
+	hr_rec_t r;
+	u32 i;
+	(void) p;
+	memset(mi_hist_read_val, 0, sizeof(mi_hist_read_val));
+	for (i = hr_total(); i > 0; i--)
+		if (hr_get(i - 1, &r)) {
+			hr_out(&r, mi_hist_read_val);
+			break;
+		}
+	return 0;
+}
+
+/* the stack does not store the value of an attribute that has a write callback */
+int mi_hist_ccc_write(void * p) {
+	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
+	if (req->l2cap - 3 >= 2) {
+		mi_hist_ccc = req->dat[0] | (req->dat[1] << 8);
+		if (!mi_hist_ccc)
+			hist_stop();
+	}
+	return 0;
+}
+
+u8 mi_hist_busy(void) {
+	return mi_hist.active && mi_hist_ccc;
+}
+
+/* main loop, connected and TX FIFO ready: send one hourly record */
+void mi_hist_task(void) {
+	hr_rec_t r;
+	u8 rec[sizeof(mi_hist_read_val)]; // the stack copies notification data
+	while (mi_hist.active) {
+		if (mi_hist.pos >= hr_total()) {
+			hist_stop();
+			return;
+		}
+		if (hr_get(mi_hist.pos++, &r)) {
+			hr_out(&r, rec);
+			bls_att_pushNotifyData(MiTH_HNTF_DP_H, rec, sizeof(rec));
+			mi_hist.cur = r.hour + 1;
+			return;
+		}
+	}
+}
+
+#else // USE_MI_HIST_MAXMIN
 #define MI_HIST_SEC_RECS_DEF	((FLASH_SECTOR_SIZE - sizeof(memo_head_t)) / sizeof(memo_blk_t))
 #if USE_MEMO_1M
 #define H_SEC_RECS	(mi_hist.snap.sectors)
@@ -586,11 +902,6 @@ int mi_reset_write(void * p) {
 #define H_START		FLASH_ADDR_START_MEMO
 #define H_END		FLASH_ADDR_END_MEMO
 #endif
-
-RAM u8 mi_hist_count_val[8];	// ebe0ccb9: u32 last index, u32 count
-RAM u8 mi_hist_index_val[4];	// ebe0ccba: u32 index
-RAM u8 mi_hist_read_val[14];	// ebe0ccbb: newest record
-RAM u16 mi_hist_ccc;
 
 typedef struct {
 	memo_inf_t snap;	// logger snapshot
@@ -646,10 +957,6 @@ static u32 hist_hour(u32 t) {
 	// half window = measurement_step_time (system ticks) * averaging_measurements / 2, in seconds
 	half = (wrk.measurement_step_time / CLOCK_16M_SYS_TIMER_CLK_1MS) * cfg.averaging_measurements / 2000;
 	return (t - half) / 3600;
-}
-
-static void put32(u8 *p, u32 v) {
-	p[0] = (u8)v; p[1] = (u8)(v >> 8); p[2] = (u8)(v >> 16); p[3] = (u8)(v >> 24);
 }
 
 static u32 hist_seek(u32 hour);
@@ -836,6 +1143,7 @@ void mi_hist_task(void) {
 			mi_hist.cur++;
 	}
 }
+#endif // USE_MI_HIST_MAXMIN
 #endif // (DEV_SERVICES & SERVICE_HISTORY)
 
 #if USE_MI_TIME_SAVE

@@ -12,6 +12,9 @@
 #include "flash_eep.h"
 #include "logger.h"
 #include "ble.h"
+#if USE_MI_HIST_MAXMIN
+#include "mi_auth.h"
+#endif
 
 #define MEMO1M_SEC_COUNT	((FLASH1M_ADDR_END_MEMO - FLASH1M_ADDR_START_MEMO) / FLASH_SECTOR_SIZE) // 52 or 128 sectors
 #define MEMO1M_SEC_RECS		((FLASH_SECTOR_SIZE-sizeof(memo_head_t))/sizeof(memo_blk_t)) // 1 sector = 409 records
@@ -187,6 +190,9 @@ void clear_memo(void) {
 		faddr += FLASH_SECTOR_SIZE;
 	}
 	memo_sec_init(MEMO_START_ADDR);
+#if USE_MI_HIST_MAXMIN
+	mi_hist_clear(); // MiHome hourly max/min
+#endif
 	return;
 }
 

@@ -3011,6 +3011,8 @@ GPIO_D7 - SDA
 
 #elif DEVICE_TYPE == DEVICE_LYWSD02MMC
 /* Flash areas used besides the firmware (original firmware 2.0.1_0021):
+  0x40000..0x71FFF measurement log (logger, ends at 0x74000 without USE_MI_HIST_MAXMIN)
+  0x72000..0x73FFF MiHome hourly max/min ring (USE_MI_HIST_MAXMIN)
   0x78000, 0x79000 Mijia key records (ping-pong sectors: token, bindkey, ...), read by find_mi_keys()
   0x7A000..0x7BFFF clock log (USE_MI_TIME_SAVE)
   0x80000 End Flash (FLASH_SIZE)
@@ -3084,6 +3086,12 @@ GPIO_D7 - SDA
 #define USE_SENSOR_SHT4X		1
 #define USE_SENSOR_SHTC3		1
 #define USE_SENSOR_SHT30		0
+/* The board uses a GXHTC3 (SHTC3 clone, address 0x70, same commands and CRC): its wake-up and
+ * soft reset time is up to 500 us (SHTC3: 240 us) -> longer waits and one retry of the measure command */
+#define USE_SENSOR_GXHTC3		1
+/* Humidity correction curve of the original firmware 2.0.1_0021 (applied to the sensor value, 2..99 %):
+ * < 20 %: (h * 20 - 4) / 18, 20..80 %: h + 2 %, 80..96.35 %: (h * 23 - 200) / 20, above: h + 5 % */
+#define USE_STOCK_HUMI_CORR		1
 
 #define SHL_ADC_VBAT		B0P  // "B0P" in adc.h
 #define GPIO_VBAT			GPIO_PB0 // missing pin on case TLSR8253F512ET32
@@ -3836,6 +3844,12 @@ GPIO_PD7 - LED to +Vbat
 #if USE_MI_COMFORT && !(USE_MI_AUTH && (DEV_SERVICES & SERVICE_SCREEN))
 #error "USE_MI_COMFORT requires USE_MI_AUTH and SERVICE_SCREEN"
 #endif
+/* = 1 MiHome history (ebe0ccb9..ebe0ccbc): max/min of all measurements of each hour, kept in its own
+ * ring 0x72000..0x73FFF (about 28 days; the logger ends at 0x72000), as the original firmware.
+ * = 0: max/min of the logger records (averages) of each hour. */
+#ifndef USE_MI_HIST_MAXMIN
+#define USE_MI_HIST_MAXMIN	(USE_MI_AUTH && (DEVICE_TYPE == DEVICE_LYWSD02MMC) && (DEV_SERVICES & SERVICE_HISTORY))
+#endif
 #if USE_MI_TIME_SAVE && !USE_MI_AUTH
 #error "USE_MI_TIME_SAVE requires USE_MI_AUTH"
 #endif
@@ -3866,6 +3880,12 @@ GPIO_PD7 - LED to +Vbat
 #endif
 #ifndef USE_SENSOR_SHTC3
 #define USE_SENSOR_SHTC3	0
+#endif
+#ifndef USE_SENSOR_GXHTC3
+#define USE_SENSOR_GXHTC3	0
+#endif
+#ifndef USE_STOCK_HUMI_CORR
+#define USE_STOCK_HUMI_CORR	0
 #endif
 #ifndef USE_SENSOR_SHT30
 #define USE_SENSOR_SHT30	0

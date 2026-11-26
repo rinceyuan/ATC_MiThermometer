@@ -19,7 +19,8 @@ import time
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.ciphers.aead import AESCCM
 from elftools.elf.elffile import ELFFile
-from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
+from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE, UC_HOOK_MEM_WRITE, UC_PROT_READ, \
+    UC_PROT_EXEC, UC_PROT_ALL
 from unicorn.arm_const import UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_SP, UC_ARM_REG_LR, \
     UC_ARM_REG_PC
 
@@ -56,12 +57,106 @@ F3_SHOW_DOW = 0x80
 ENTRIES = ['lcd', 'update_lcd', 'WakeupLowPowerCb', 'check_battery', 'get_battery_level',
            'utime_to_rtc', 'mi_th_update', 'mi_beacon_init', 'mi_encrypt_data_beacon',
            'mi_time_write', 'mi_time_read', 'mi_tunit_write', 'mi_tunit_read',
-           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write', 'bat_div_detect', 'init_rtc']
+           'mi_cmf_write', 'mi_cmf_read', 'mi_reset_write', 'bat_div_detect', 'init_rtc',
+           'mi_hist_init', 'mi_hist_measure', 'mi_hist_clear', 'mi_hist_count_read', 'mi_hist_index_write',
+           'mi_hist_ccc_write', 'mi_hist_busy', 'mi_hist_task', 'mi_hist_read_read',
+           'check_sensor', 'start_measure_shtc3', 'read_sensor_sht30_shtc3_sht4x']
 STUBS = ['init_lcd', 'send_i2c_byte', 'send_i2c_buf', 'read_sensor_cb', 'get_adc_mv',
          'low_vbat', 'go_sleep', 'write_memo', 'bls_pm_setAppWakeupLowPower',
          '__divsi3', '__modsi3', '__udivsi3', '__umodsi3', 'aes_encrypt', 'flash_write_cfg', 'mi_time_set',
-         'mi_auth_logged', 'hist_stop', 'clear_memo', 'gpio_setup_up_down_resistor', 'sleep_us',
-         'scan_i2c_addr', 'read_i2c_byte_addr']
+         'mi_auth_logged', 'clear_memo', 'gpio_setup_up_down_resistor', 'sleep_us',
+         'scan_i2c_addr', 'read_i2c_byte_addr', 'flash_read_page', 'flash_write_page', 'flash_erase_sector',
+         'bls_att_pushNotifyData', 'bls_pm_setManualLatency', 'init_i2c']
+HR_START = 0x72000  # USE_MI_HIST_MAXMIN hourly ring (2 sectors)
+SENS_ID, SENS_ADDR, SENS_TYPE = 20, 24, 25
+MD_TEMP_X01, MD_HUMI_X1 = 10, 14
+I2C_REG_CTRL = REG + 7
+
+
+def sht_crc(b):
+    crc = 0xff
+    for x in b:
+        crc ^= x
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x31) & 0xff if crc & 0x80 else (crc << 1) & 0xff
+    return crc
+
+
+def stock_humi(raw):
+    """Humidity of the original firmware 2.0.1_0021 (0xd0d8..0xd150), x0.01 %."""
+    h = (raw * 10000) >> 16
+    if h <= 199:
+        r = 200
+    elif h <= 1999:
+        r = (h * 20 - 400) // 18
+    elif h <= 7999:
+        r = h + 200
+    elif h <= 9635:
+        r = (h * 23 - 20000) // 20
+    else:
+        r = h + 500
+    return min(r, 9900)
+
+
+class GxhtcModel:
+    """GXHTC3 / SHTC3 at 0x70 (datasheet GXHTC3 V2.6): a sleeping sensor only accepts the wake-up
+    command, then NAKs everything for wake_us (GXHTC3: 180..500 us, SHTC3: up to 240 us); NAK
+    during a measurement (10..11 ms) and after a soft reset."""
+    WAKE, MEAS, SLEEP, RESET, GET_ID = 0x3517, 0x7866, 0xB098, 0x805D, 0xEFC8
+
+    def __init__(self, wake_us=400, meas_us=10800, nak_sleep=False, ident=0x0887):
+        self.wake_us, self.meas_us, self.nak_sleep, self.ident = wake_us, meas_us, nak_sleep, ident
+        self.sleeping, self.ready_at, self.meas_until = True, 0, 0
+        self.out, self.rd, self.resets = b'', 0, 0
+        self.set(25.19, 46.2)
+
+    def set(self, temp_c, humi):
+        self.t_raw = int(round((temp_c + 45) * 65536 / 175))
+        self.h_raw = max(0, min(65535, int(round(humi * 65536 / 100))))
+
+    def header(self, aid, wr, now):
+        if aid >> 1 != 0x70:
+            return False
+        busy = now < self.ready_at or now < self.meas_until
+        if aid & 1:  # read header
+            if self.sleeping or busy or not self.out:
+                return False
+            self.rd = 0
+            return True
+        cmd = (wr[0] << 8) | wr[1] if len(wr) == 2 else None
+        if self.sleeping:
+            if cmd == self.WAKE:
+                self.sleeping, self.ready_at = False, now + self.wake_us
+                return True
+            return False  # a bare address scan is NAKed in sleep
+        if busy:
+            return False
+        if cmd is None or cmd == self.WAKE:
+            return True
+        if cmd == self.MEAS:
+            self.meas_until = now + self.meas_us
+            t, h = self.t_raw.to_bytes(2, 'big'), self.h_raw.to_bytes(2, 'big')
+            self.out = t + bytes([sht_crc(t)]) + h + bytes([sht_crc(h)])
+        elif cmd == self.SLEEP:
+            if self.nak_sleep:
+                return False
+            self.sleeping, self.out = True, b''
+        elif cmd == self.RESET:
+            self.ready_at, self.out = now + self.wake_us, b''
+            self.resets += 1
+        elif cmd == self.GET_ID:
+            i = self.ident.to_bytes(2, 'big')
+            self.out = i + bytes([sht_crc(i)])
+        else:
+            return False
+        return True
+
+    def read_byte(self):
+        b = self.out[self.rd] if self.rd < len(self.out) else 0xff
+        self.rd += 1
+        return b
+
+
 SCRATCH = 0x84e000  # SRAM buffer for ATT write packets
 
 BINDKEY = bytes(range(0x10, 0x20))
@@ -142,6 +237,12 @@ class LYWSD02Firmware:
         self.pd = False     # PB4 internal pull-down on
         self.float_mv = 1700  # open PB4 without pull-down (worst case: looks like a 3.4 V cell)
         self.rtc_bcd = None   # PCF85163 registers 2..8 for init_rtc (None: no RTC)
+        self.flash = bytearray(b'\xff' * 0x80000)  # flash_read_page / write_page / erase_sector
+        self.notifies = []    # bls_att_pushNotifyData (handle, data)
+        self.sensor = None    # GxhtcModel on the hardware I2C (reg_i2c_*), None: I2C not emulated
+        self.now_us = 0       # sensor model time: sleep_us() and I2C transfers (400 kHz)
+        self._i2c_nak = True
+        uc.hook_add(UC_HOOK_MEM_WRITE, self._i2c_ctrl, begin=REG + 4, end=I2C_REG_CTRL)
 
         # Power-on defaults
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
@@ -206,8 +307,30 @@ class LYWSD02Firmware:
         elif name == 'mi_time_set':
             self.mi_time_sets.append(r0)
             self._ret(0)
-        elif name == 'scan_i2c_addr':  # PCF85163 present (0x51)
-            self._ret(r0 if (r0 >> 1) == 0x51 and self.rtc_bcd is not None else 0)
+        elif name == 'scan_i2c_addr':  # PCF85163 present (0x51), sensor model (0x70)
+            if (r0 >> 1) == 0x70 and self.sensor is not None:
+                self.now_us += 30
+                self._ret(r0 if self.sensor.header(r0 & 0xfe, [], self.now_us) else 0)
+            else:
+                self._ret(r0 if (r0 >> 1) == 0x51 and self.rtc_bcd is not None else 0)
+        elif name == 'sleep_us':
+            self.now_us += r0
+            self._ret(0)
+        elif name == 'flash_read_page':
+            uc.mem_write(r2, bytes(self.flash[r0:r0 + r1]))
+            self._ret(0)
+        elif name == 'flash_write_page':  # NOR flash: bits 1 -> 0 only
+            d = bytes(uc.mem_read(r2, r1))
+            for i, b in enumerate(d):
+                self.flash[r0 + i] &= b
+            self._ret(0)
+        elif name == 'flash_erase_sector':
+            a = r0 & ~0xfff
+            self.flash[a:a + 0x1000] = b'\xff' * 0x1000
+            self._ret(0)
+        elif name == 'bls_att_pushNotifyData':
+            self.notifies.append((r0, bytes(uc.mem_read(r1, r2))))
+            self._ret(0)
         elif name == 'read_i2c_byte_addr':  # RTC registers 2..8 (BCD, seconds bit 7 = VL)
             r3 = uc.reg_read(UC_ARM_REG_R3)
             if self.rtc_bcd is None:
@@ -239,6 +362,57 @@ class LYWSD02Firmware:
             self._ret(0)
         else:
             self._ret(0)
+
+    def _i2c_ctrl(self, uc, access, address, size, value, user_data):
+        """Write to reg_i2c_ctrl: hardware I2C master (i2c.c, read_sensor_sht30_shtc3_sht4x) -> sensor model;
+        sets reg_i2c_status (NAK bit 2) and reg_i2c_di."""
+        if self.sensor is None or not address <= I2C_REG_CTRL < address + size:
+            return
+        regs = bytearray(uc.mem_read(REG, 8))  # the hook runs before the write: merge the written bytes
+        for i in range(size):
+            if address - REG + i < 8:
+                regs[address - REG + i] = (value >> (8 * i)) & 0xff
+        v = regs[7]
+        if v & 0x11 == 0x11:  # START + ID (+ ADDR / DO bytes, + STOP)
+            wr = ([regs[4]] if v & 0x02 else []) + ([regs[5]] if v & 0x04 else [])
+            self.now_us += 30 + 25 * len(wr)
+            self._i2c_nak = not self.sensor.header(regs[1], wr, self.now_us)
+            uc.mem_write(REG + 2, bytes([4 if self._i2c_nak else 0]))
+        elif v & 0x08:  # DI: read one byte
+            self.now_us += 25
+            uc.mem_write(REG + 6, bytes([0xff if self._i2c_nak else self.sensor.read_byte()]))
+            uc.mem_write(REG + 2, b'\0')
+
+    def attach_sensor(self, model):
+        self.sensor = model
+        self.write('sensor_cfg', 0, bytes(self.sym['sensor_cfg'][1]))  # default coefficients
+        self.uc.mem_write(REG + 0x63, b'\x02')  # reg_clk_en0: I2C clock on
+
+    def sensor_values(self):
+        temp, humi = struct.unpack('<hH', self.read('measured_data', MD_TEMP, 4))
+        return temp, humi
+
+    def mi_hist_feed(self, utc, temp_x01, humi_x1):
+        """One measurement for the hourly max/min (mi_hist_measure) at UTC time utc."""
+        self.write32('wrk', WRK_UTC, utc)
+        self.write('measured_data', MD_TEMP_X01, struct.pack('<h', temp_x01))
+        self.write8('measured_data', MD_HUMI_X1, humi_x1)
+        self.call('mi_hist_measure')
+
+    def mi_hist_count(self):
+        self.call('mi_hist_count_read', 0)
+        return struct.unpack('<II', self.read('mi_hist_count_val', 0, 8))  # last index, count
+
+    def mi_hist_transfer(self, index):
+        """MiHome: ccc on, index write, then mi_hist_task() while busy; returns the notified records."""
+        self.att_write('mi_hist_ccc_write', b'\x01\x00')
+        self.notifies = []
+        self.att_write('mi_hist_index_write', struct.pack('<I', index))
+        for _ in range(5000):
+            if not self.call('mi_hist_busy') & 0xff:
+                break
+            self.call('mi_hist_task')
+        return [struct.unpack('<IIhBhB', d) for _h, d in self.notifies]  # idx, time, tmax, hmax, tmin, hmin
 
     def call(self, fn, *args):
         uc = self.uc
@@ -696,6 +870,79 @@ def selftest(elf, binf):
             ok = False
         f.vdd_mv = f.div_mv = None
         f.reset_battery_average()
+
+    if 'start_measure_shtc3' in f.sym and 'read_sensor_sht30_shtc3_sht4x' in f.sym:
+        # SHTC3 driver on the emulated hardware I2C with a GXHTC3 model (the LYWSD02MMC sensor)
+        def sensor_cycle(m, temp_c=25.19, humi=46.2):
+            m.set(temp_c, humi)
+            st = f.call('start_measure_shtc3') & 0xff
+            f.now_us += 11000  # sensor_cfg.measure_timeout
+            rd = f.call('read_sensor_sht30_shtc3_sht4x') & 0xff if st == 0 else 0
+            return st, rd
+
+        for title, wake in (('SHTC3 timing (wake-up 200 us)', 200), ('GXHTC3 slow wake-up (400 us)', 400),
+                            ('GXHTC3 max wake-up (500 us)', 500)):
+            m = GxhtcModel(wake_us=wake)
+            f.attach_sensor(m)
+            a = f.call('check_sensor') & 0xff
+            typ, sid = f.read8('sensor_cfg', SENS_TYPE), f.read32('sensor_cfg', SENS_ID)
+            check(f'{title}: detected', a == 0xe0 and typ == 1 and sid == 0xc30887 and m.sleeping,
+                  f'addr {a:#x} type {typ} id {sid:#x} resets {m.resets}')
+            st, rd = sensor_cycle(m)
+            t, h = f.sensor_values()
+            check(f'{title}: measure + read', st == 0 and rd == 1 and abs(t - 2519) <= 1 and m.sleeping,
+                  f'start {st} read {rd} T {t / 100:.2f} H {h / 100:.2f}')
+        m = GxhtcModel(wake_us=400, nak_sleep=True)
+        f.attach_sensor(m)
+        f.call('check_sensor')
+        m.sleeping, m.ready_at = True, 0  # sleeps, but NAKs the sleep command after the read
+        st, rd = sensor_cycle(m, 21.5, 55)
+        t, h = f.sensor_values()
+        check('sleep command NAK: data kept', rd == 1 and abs(t - 2150) <= 1, f'read {rd} T {t / 100:.2f}')
+        m.nak_sleep = False
+        res = []
+        for rh in (1.0, 10.0, 46.2, 50.0, 85.0, 95.0, 97.0, 100.0):  # USE_STOCK_HUMI_CORR
+            sensor_cycle(m, 25, rh)
+            h = f.sensor_values()[1]
+            res.append((rh, h, stock_humi(m.h_raw)))
+        check('humidity = original firmware curve', all(h == e for _r, h, e in res),
+              ' '.join(f'{r:g}->{h / 100:.2f}' for r, h, _e in res))
+        f.sensor = None
+
+    if 'mi_hist_init' in f.sym:
+        # USE_MI_HIST_MAXMIN: max/min of all measurements of each hour, flash ring 0x72000..0x73FFF
+        f.flash[HR_START:HR_START + 0x2000] = b'\x5a' * 0x2000  # old logger data
+        f.call('mi_hist_init')
+        check('hist: foreign data erased at power-on', f.flash[HR_START:HR_START + 0x2000] == b'\xff' * 0x2000)
+        h0 = 1795593600 // 3600
+        samples = ((0, 200, 40), (1200, 235, 55), (2400, 210, 45),        # hour 0: 20.0..23.5 C, 40..55 %
+                   (3600, -15, 70), (4000, -50, 72), (7000, 5, 60),       # hour 1: -5.0..0.5 C, 60..72 %
+                   (7300, 300, 30),                                       # hour 2: one sample
+                   (10800, 260, 33), (10790, 999, 99), (11000, 255, 34))  # hour 3 (current), 1 step back
+        for dt_s, tv, hv in samples:
+            f.mi_hist_feed(h0 * 3600 + dt_s, tv, hv)
+        last, cnt = f.mi_hist_count()
+        check('hist: 3 complete hours (current in RAM)', (last, cnt) == (h0 + 2, 3), f'last {last - h0:+d} count {cnt}')
+        recs = f.mi_hist_transfer(h0)
+        exp = [(h0, (h0 + 1) * 3600, 235, 55, 200, 40), (h0 + 1, (h0 + 2) * 3600, 5, 72, -50, 60),
+               (h0 + 2, (h0 + 3) * 3600, 300, 30, 300, 30)]
+        check('hist: true hourly max/min records', recs == exp, str([r[2:] for r in recs]))
+        f.call('mi_hist_read_read', 0)
+        check('hist: ebe0ccbb = newest hour', f.read('mi_hist_read_val', 0, 14) == struct.pack('<IIhBhB', *exp[2]))
+        check('hist: index after the last -> nothing', f.mi_hist_transfer(h0 + 3) == [])
+        f.call('mi_hist_init')  # reboot: the current hour (RAM) is lost
+        f.mi_hist_feed((h0 + 4) * 3600, 100, 50)
+        check('hist: after reboot', f.mi_hist_count() == (h0 + 2, 3) and f.mi_hist_transfer(h0 + 1) == exp[1:])
+        for k in range(5, 5 + 700):  # 700 more hours: wraps the 2 x 341 ring
+            f.mi_hist_feed((h0 + k) * 3600, k, k & 0x7f)
+        last, cnt = f.mi_hist_count()
+        f.call('mi_hist_init')
+        check('hist: ring wrap keeps 341..682 hours', 341 <= cnt <= 682 and last == h0 + 703
+              and f.mi_hist_count() == (last, cnt), f'count {cnt}')
+        recs = f.mi_hist_transfer(last - 2)
+        check('hist: newest records after wrap', [(r[0] - h0, r[2]) for r in recs] == [(701, 701), (702, 702), (703, 703)])
+        f.call('mi_hist_clear')
+        check('hist: clear', f.mi_hist_count() == (0, 0))
 
     print('RESULT:', 'PASS' if ok else 'FAIL')
     return ok

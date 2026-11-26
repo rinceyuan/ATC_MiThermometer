@@ -302,11 +302,11 @@ const cfg_t def_cfg = {
 		.flg2.adv_crypto = true, // MiHome: encrypted MiBeacon, bindkey from the Mi key record
 #endif
 		.advertising_interval = 60, // multiply by 62.5 ms = 3.750 sec
-		.measure_interval = 4, // * advertising_interval = 15 sec
+		.measure_interval = 8, // * advertising_interval = 30 sec (the E-Ink shows new values once a minute)
 		.min_step_time_update_lcd = 49, //x0.05 sec,   2.45 sec
 		.hw_ver = DEVICE_TYPE,
 #if (DEV_SERVICES & SERVICE_HISTORY)
-		.averaging_measurements = 120, // * measure_interval = 15 * 120 = 1800 sec = 30 minutes
+		.averaging_measurements = 60, // * measure_interval = 30 * 60 = 1800 sec = 30 minutes
 #endif
 #elif (DEVICE_TYPE == DEVICE_ZG204ZV)
 		.flg2.adv_flags = true,
@@ -662,6 +662,10 @@ void read_sensors(void) {
 				if (wrk.ota_is_working == 0 && cfg.averaging_measurements) {
 					write_memo();
 				}
+#endif
+#if USE_MI_HIST_MAXMIN
+				if (wrk.ota_is_working == 0)
+					mi_hist_measure(); // MiHome hourly max/min
 #endif
 #if (DEV_SERVICES & SERVICE_BINDKEY) && USE_MIHOME_BEACON
 				if ((cfg.flg.advertising_type == ADV_TYPE_MI) && cfg.flg2.adv_crypto)
@@ -1032,6 +1036,9 @@ void user_init_normal(void) {//this will get executed one time after power up
 #if (DEV_SERVICES & SERVICE_HISTORY)
 	memo_init();
 #endif
+#if USE_MI_HIST_MAXMIN
+	mi_hist_init();
+#endif
 #if USE_MI_TIME_SAVE
 	mi_time_load();
 #endif
@@ -1103,10 +1110,19 @@ void main_loop(void) {
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 		if(++rtc.seconds >= 60) {
 			rtc.seconds = 0;
+#if (DEVICE_TYPE == DEVICE_LYWSD02MMC)
+			/* resync every minute: the shown minute follows the RTC crystal, not the software
+			 * clock (32k RC in sleep); a minute read before the RTC has changed is corrected
+			 * by the next rollover. One I2C read (~1 ms) per minute. */
+			rtc_sync_utime = wrk.utc_time_sec;
+			if(++rtc.minutes >= 60)
+				rtc.minutes = 0;
+#else
 			if(++rtc.minutes >= 60) {
 				rtc.minutes = 0;
 				rtc_sync_utime = wrk.utc_time_sec;
 			}
+#endif
 			SET_LCD_UPDATE();
 		}
 #endif
