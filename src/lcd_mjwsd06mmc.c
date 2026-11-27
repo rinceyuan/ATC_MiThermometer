@@ -6,6 +6,9 @@
 #include "app.h"
 #include "i2c.h"
 #include "lcd.h"
+#if USE_MI_TZ
+#include "mi_auth.h"
+#endif
 
 RAM u8 lcd_i2c_addr;
 
@@ -294,7 +297,11 @@ void show_reboot_screen(void) {
 #if	USE_DISPLAY_CLOCK
 _attribute_ram_code_
 void show_clock(void) {
+#if USE_MI_TZ
+	u32 tmp = (wrk.utc_time_sec + MI_TZ_OFFSET_SEC()) / 60; // the device clock is UTC (MiHome): local time
+#else
 	u32 tmp = wrk.utc_time_sec / 60;
+#endif
 	u32 min = tmp % 60;
 	u32 hrs = (tmp / 60) % 24;
 	display_buff[5] = 0;

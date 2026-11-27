@@ -103,10 +103,18 @@ def selftest(elf, binf):
     f.set_flag(False, F_COMFORT, True)
     show('comfort smiley', stages=1)
     f.set_flag(False, F_CLOCK, True)
-    texts = show('clock on (UTC 16:06, alternates with temperature)', stages=4)
-    clk = any(t.split()[:2] == ['16', '06'] for t in texts) and any('25.2°C' in t for t in texts)
+    hh = '00' if f.has_tz else '16'  # MiHome build: 16:06 UTC shown in the default timezone UTC+8
+    texts = show(f'clock on (UTC 16:06 -> LCD {hh}:06, alternates with temperature)', stages=4)
+    clk = any(t.split()[:2] == [hh, '06'] for t in texts) and any('25.2°C' in t for t in texts)
     ok &= clk
-    print(f'         clock stage 16:06 and temperature stage both shown: {clk}')
+    print(f'         clock stage {hh}:06 and temperature stage both shown: {clk}')
+    if f.has_tz:
+        f.set_tz(-3, -2)  # UTC-3:30
+        texts = show('clock, timezone UTC-3:30 -> LCD 12:36', stages=4)
+        clk2 = any(t.split()[:2] == ['12', '36'] for t in texts)
+        ok &= clk2
+        print(f'         clock stage 12:36 shown: {clk2}')
+        f.set_tz(8, 0)
     f.set_flag(False, F_CLOCK, False)
     f.set_connected(True)
     show('BLE connected', expect=['BLE'])
@@ -279,7 +287,7 @@ def run_gui(elf, binf, autoclose=0):
     g2 = ttk.LabelFrame(panel, text='显示设置（对应刷机网页的设置）')
     g2.grid(row=1, column=0, sticky='we', pady=4)
     for i, (txt, var) in enumerate((('华氏度 ℉', v_f), ('舒适度笑脸', v_cmf), ('总是显示电量', v_bat),
-                                    ('显示时钟（UTC）', v_clk), ('关闭屏幕', v_off))):
+                                    ('显示时钟（本地时间，时区 UTC+8）', v_clk), ('关闭屏幕', v_off))):
         ttk.Checkbutton(g2, text=txt, variable=var, command=lambda: settings()).grid(
             row=i // 2, column=i % 2, sticky='w', padx=4)
     row(g2, 3, '固定笑脸 0-7', ttk.Spinbox(g2, from_=0, to=7, textvariable=v_sm, width=6, command=lambda: settings()))
@@ -375,7 +383,7 @@ def run_gui(elf, binf, autoclose=0):
             f'  温度 x0.1  {v["temp_x01"]}    湿度 {v["humi_x1"]}%\n'
             f'  电池       {v["mv"]} mV (平均 {v["avg_mv"]}) → {v["batt"]}%'
             f'{"  低电压!" if fw.low_vbat else ""}\n'
-            f'  设备时钟   {clk} UTC\n'
+            f'  设备时钟   {clk} UTC（屏幕时钟 = UTC{fw.tz_offset() / 3600:+g} h）\n'
             + (f'米家读取 ebe0ccc1: {c1.hex(" ")}\n'
                f'  = {int.from_bytes(c1[:2], "little", signed=True) / 100:.2f}℃  {c1[2]}%  '
                f'{int.from_bytes(c1[3:], "little")} mV\n' if c1 is not None else '米家读取: (此固件无米家服务)\n')

@@ -3163,6 +3163,22 @@ function devTimeNow() {
 }
 function setDevTime() {
 	let time = devTimeNow();
+	if (miEnabled && customEnabled && gattServer) {
+		// MiHome custom firmware: UTC + timezone (hour, 15-min quarter) to ebe0ccb7, the LCD clock shows local time
+		let off = -(new Date()).getTimezoneOffset(); // minutes east of UTC
+		let tzh = Math.trunc(off / 60), tzq = Math.trunc((off % 60) / 15);
+		let tb = new Uint8Array([time & 0xff, (time >> 8) & 0xff, (time >> 16) & 0xff, (time >> 24) & 0xff, tzh & 0xff, tzq & 0xff]);
+		addClog("Write ebe0ccb7 (UTC + timezone " + tzh + "h " + (tzq * 15) + "m): " + dump(tb, tb.length));
+		gattServer.getPrimaryService('ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6')
+		.then(srv => srv.getCharacteristic('ebe0ccb7-7a0a-4b0c-8a1a-6ff2997da3a6'))
+		.then(ch => ch.writeValue(tb))
+		.then(_ => { addAlog('Send new DevTime ok (UTC, timezone UTC' + (off >= 0 ? '+' : '-') + Math.trunc(Math.abs(off) / 60) + (off % 60 ? ':' + Math.abs(off % 60) : '') + ')'); })
+		.catch(error => { addClog('ebe0ccb7: ' + error + ', time only'); setDevTimeCmd(time); });
+		return;
+	}
+	setDevTimeCmd(time);
+}
+function setDevTimeCmd(time) {
 	blk = new Uint8Array(5);
 	blk[0] = 0x23;
 	blk[1] = time & 0xff;

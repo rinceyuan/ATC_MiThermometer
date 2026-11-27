@@ -122,6 +122,9 @@ class Firmware:
         self.write('cfg', 0, self.read('def_cfg', 0, self.sym['def_cfg'][1]))
         self.write('cmf', 0, self.read('def_cmf', 0, self.sym['def_cmf'][1]))
         self.write('mac_public', 0, MAC)
+        self.has_tz = 'mi_tz' in self.sym  # MiHome build: LCD clock = UTC clock + timezone
+        if self.has_tz:
+            self.set_tz(8, 0)  # power-on default of mi_time_load() (EEP_ID_MTZ not written)
         if self.has_beacon:
             self.write('bindkey', 0, BINDKEY)
             self.call('mi_beacon_init')
@@ -217,6 +220,15 @@ class Firmware:
 
     def set_clock(self, utc):
         self.write32('wrk', WRK_UTC, int(utc))
+
+    def set_tz(self, hours, quarters=0):
+        self.write('mi_tz', 0, bytes([hours & 0xff, quarters & 0xff]))
+
+    def tz_offset(self):
+        if not self.has_tz:
+            return 0
+        h, q = (b - 256 if b > 127 else b for b in self.read('mi_tz', 0, 2))
+        return (h * 60 + q * 15) * 60
 
     def clock(self):
         return self.read32('wrk', WRK_UTC)

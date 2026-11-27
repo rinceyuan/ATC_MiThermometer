@@ -57,6 +57,8 @@ RAM u8 mi_tunit_val;
 RAM u16 mi_th_ccc;
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 RAM u8 mi_time_val[7];
+#endif
+#if USE_MI_TZ
 RAM s8 mi_tz[2]; // [0] = timezone hour (-24..24), [1] = 15-min quarter (-4..4)
 
 s32 mi_tz_offset_sec(void) {
@@ -78,6 +80,8 @@ static int mi_tz_norm(s8 *tz) {
 	}
 	return 1;
 }
+#endif // USE_MI_TZ
+#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 
 int mi_time_read(void * p) {
 	(void) p;
@@ -402,6 +406,7 @@ int mi_std_write(void * p) {
 int mi_time_write(void * p) {
 	rf_packet_att_data_t *req = (rf_packet_att_data_t*) p;
 	u32 len = req->l2cap - 3;
+#if USE_MI_TZ
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 	/* As the original LYWSD02MMC 2.0.1_0021 firmware:
 	 * 5: utc + tz hour; 6: utc + tz hour + tz quarter (15 min); 7: only the 12/24h mode (0xAA = 12h).
@@ -416,6 +421,8 @@ int mi_time_write(void * p) {
 		SET_LCD_UPDATE();
 		return 0;
 	}
+#endif
+	/* LCD clock (MJWSD06MMC): 5 / 6 bytes as the LYWSD02MMC firmware set the timezone too */
 	if (len > 7)
 		return 0;
 	if (len >= 5) {
@@ -1194,7 +1201,7 @@ static int mi_tlog_write(u32 t) {
  *  t + 6 min < l <= t + 1 h: t (the clock was set back: the newest records are ahead);
  *  l > t + 1 h: l (area left by the original firmware or not written for a long time). */
 void mi_time_load(void) {
-#if (DEV_SERVICES & SERVICE_HARD_CLOCK)
+#if USE_MI_TZ
 	// normalized as written (also values saved by earlier builds, e.g. +24 h -> 0)
 	if (flash_read_cfg(mi_tz, EEP_ID_MTZ, sizeof(mi_tz)) != sizeof(mi_tz) || !mi_tz_norm(mi_tz)) {
 		mi_tz[0] = 8; // default UTC+8

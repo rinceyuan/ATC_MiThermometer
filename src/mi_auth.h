@@ -38,7 +38,11 @@ int mi_time_write(void * p);	// ebe0ccb7 write
 #if (DEV_SERVICES & SERVICE_HARD_CLOCK)
 extern u8 mi_time_val[7];
 int mi_time_read(void * p);		// ebe0ccb7 read (utc + tz + 12/24h mode)
+#endif
+#if USE_MI_TZ
+extern s8 mi_tz[2];				// timezone: hour, 15-min quarter (EEP_ID_MTZ, default UTC+8)
 s32 mi_tz_offset_sec(void);
+#define MI_TZ_OFFSET_SEC()	(((s32)mi_tz[0] * 60 + (s32)mi_tz[1] * 15) * 60) // RAM code (LCD)
 #endif
 int mi_tunit_write(void * p);	// ebe0ccbe write
 #if USE_MI_COMFORT

@@ -3841,6 +3841,9 @@ GPIO_PD7 - LED to +Vbat
 #ifndef USE_MI_COMFORT // = 1 ebe0ccd7 comfort range + ebe0ccd4 reset data as the original LYWSD02MMC 2.0.1_0021 firmware
 #define USE_MI_COMFORT	(USE_MI_AUTH && (DEVICE_TYPE == DEVICE_LYWSD02MMC))
 #endif
+#ifndef USE_MI_TZ // = 1 timezone (EEP_ID_MTZ, default UTC+8) for the local time of the RTC / LCD clock; the device clock is UTC
+#define USE_MI_TZ	(USE_MI_AUTH && ((DEV_SERVICES & SERVICE_HARD_CLOCK) || USE_DISPLAY_CLOCK))
+#endif
 #if USE_MI_COMFORT && !(USE_MI_AUTH && (DEV_SERVICES & SERVICE_SCREEN))
 #error "USE_MI_COMFORT requires USE_MI_AUTH and SERVICE_SCREEN"
 #endif
